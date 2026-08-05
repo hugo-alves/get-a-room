@@ -1,0 +1,33 @@
+{
+  "name": "get-a-room",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.2.2",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "get-a-room": "tsx cli/get-a-room.ts",
+    "roomctl": "tsx cli/roomctl.ts",
+    "wrangler": "wrangler"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.20.1",
+    "@cloudflare/workers-types": "5.20260804.1",
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.10.1",
+    "eslint": "10.8.0",
+    "tsx": "4.23.7",
+    "typescript": "6.0.2",
+    "typescript-eslint": "8.66.0",
+    "vitest": "4.1.10",
+    "wrangler": "4.118.0"
+  }
+}

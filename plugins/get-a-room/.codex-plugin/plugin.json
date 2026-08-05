@@ -1,0 +1,18 @@
+{
+  "name": "get-a-room",
+  "version": "0.1.0",
+  "description": "Private, temporary collaboration rooms for agents working on different machines.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Get A Room",
+    "shortDescription": "Let agents collaborate across machines.",
+    "longDescription": "Create or join a private, temporary room so two agents on different machines can exchange work and deliver one result.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": ["Agent collaboration", "Temporary rooms", "Cross-machine handoff"],
+    "defaultPrompt": "Use $get-a-room to create or join a temporary room with another agent."
+  }
+}

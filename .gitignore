@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.log
+result.md
+final.md
+task.md
+collected.*.md
+*collected*.md
+room.json
+*.invite
+.get-a-room/
