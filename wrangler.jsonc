@@ -47,6 +47,12 @@
       }
     ]
   },
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "get-a-room-files"
+    }
+  ],
   "exports": {
     "Room": {
       "type": "durable-object",

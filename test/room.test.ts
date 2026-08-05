@@ -68,6 +68,11 @@ function authenticated(invite: string, method = "GET", body?: unknown): RequestI
   };
 }
 
+async function sha256(value: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 describe("temporary agent room", () => {
   it("serves a minimal health endpoint", async () => {
     const response = await workerFetch("/healthz");
@@ -103,6 +108,105 @@ describe("temporary agent room", () => {
     const task = await workerFetch(`/v1/rooms/${room.room_id}/task`, authenticated(room.creator_capability));
     expect(task.status).toBe(200);
     await expect(task.json()).resolves.toEqual({ task: "A harmless task" });
+  });
+
+  it("shares an immutable file in an ordered message and deletes it with the room", async () => {
+    const room = await createRoom("Review the attached brief");
+    const observer = inviteFromUrl(room.observer_url);
+    const guest = inviteFromUrl(room.guest_invitation_url);
+    const bytes = new TextEncoder().encode("attachment contents");
+    const checksum = await sha256(bytes);
+    const upload = await workerFetch(`/v1/rooms/${room.room_id}/attachments`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${room.creator_capability}`,
+        "content-length": String(bytes.byteLength),
+        "content-type": "text/plain",
+        "x-get-a-room-filename": btoa("brief.txt"),
+        "x-get-a-room-sha256": checksum,
+      },
+      body: bytes,
+    });
+    expect(upload.status).toBe(201);
+    const uploaded = await upload.json<{ attachment: { id: string; filename: string; sha256: string } }>();
+    expect(uploaded.attachment).toMatchObject({ filename: "brief.txt", sha256: checksum });
+
+    const hidden = await workerFetch(`/v1/rooms/${room.room_id}/attachments`, authenticated(observer));
+    await expect(hidden.json()).resolves.toEqual({ attachments: [] });
+
+    const wrongRole = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(guest, "POST", { text: "Mine", attachment_ids: [uploaded.attachment.id] }),
+    );
+    expect(wrongRole.status).toBe(400);
+
+    const sent = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(room.creator_capability, "POST", {
+        text: "Initial context",
+        attachment_ids: [uploaded.attachment.id],
+      }),
+    );
+    expect(sent.status).toBe(201);
+    await expect(sent.json()).resolves.toMatchObject({
+      message: {
+        number: 1,
+        text: "Initial context",
+        attachments: [{ id: uploaded.attachment.id, filename: "brief.txt", sha256: checksum }],
+      },
+    });
+
+    const listed = await workerFetch(`/v1/rooms/${room.room_id}/attachments`, authenticated(observer));
+    await expect(listed.json()).resolves.toMatchObject({ attachments: [{ id: uploaded.attachment.id }] });
+    const downloaded = await workerFetch(
+      `/v1/rooms/${room.room_id}/attachments/${uploaded.attachment.id}`,
+      authenticated(observer),
+    );
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.headers.get("content-disposition")).toContain("attachment");
+    expect(downloaded.headers.get("x-content-sha256")).toBe(checksum);
+    expect(await downloaded.text()).toBe("attachment contents");
+
+    expect(await bindings.FILES.get(`rooms/${room.room_id}/${uploaded.attachment.id}`)).not.toBeNull();
+    const closed = await workerFetch(
+      `/v1/rooms/${room.room_id}`,
+      authenticated(room.creator_capability, "DELETE"),
+    );
+    expect(closed.status).toBe(200);
+    expect(await bindings.FILES.get(`rooms/${room.room_id}/${uploaded.attachment.id}`)).toBeNull();
+  });
+
+  it("rejects unsafe attachment names and checksum mismatches", async () => {
+    const room = await createRoom("Inspect a file");
+    const bytes = new TextEncoder().encode("safe bytes");
+    const baseHeaders = {
+      authorization: `Bearer ${room.creator_capability}`,
+      "content-length": String(bytes.byteLength),
+      "content-type": "application/octet-stream",
+      "x-get-a-room-size": String(bytes.byteLength),
+    };
+    const unsafe = await workerFetch(`/v1/rooms/${room.room_id}/attachments`, {
+      method: "POST",
+      headers: {
+        ...baseHeaders,
+        "x-get-a-room-filename": btoa("../secret.txt").replace(/=+$/u, ""),
+        "x-get-a-room-sha256": await sha256(bytes),
+      },
+      body: bytes,
+    });
+    expect(unsafe.status).toBe(400);
+
+    const mismatch = await workerFetch(`/v1/rooms/${room.room_id}/attachments`, {
+      method: "POST",
+      headers: {
+        ...baseHeaders,
+        "x-get-a-room-filename": btoa("safe.txt").replace(/=+$/u, ""),
+        "x-get-a-room-sha256": "0".repeat(64),
+      },
+      body: bytes,
+    });
+    expect(mismatch.status).toBe(400);
+    await expect(mismatch.json()).resolves.toMatchObject({ error: "attachment_integrity_failed" });
   });
 
   it("validates anonymous creation before allocating a room", async () => {

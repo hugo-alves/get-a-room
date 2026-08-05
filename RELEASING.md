@@ -9,7 +9,8 @@ This is the maintainer checklist for a public release.
 3. Run the Git-history secret scan documented in `docs/security.md`.
 4. Run `pnpm pack --dry-run` and inspect every packaged path.
 5. Exercise create, join, observe, finish, collect, and post-collection `410` behavior using isolated local session homes.
-6. Confirm `README.md`, `CHANGELOG.md`, `openapi.yaml`, and package versions agree.
+6. If attachments are enabled, exchange and verify a harmless file across isolated environments, then confirm collection and expiry remove its R2 object.
+7. Confirm `README.md`, `CHANGELOG.md`, `openapi.yaml`, and package versions agree.
 
 ## Publish
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { chmod, link, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 
 type FlagValue = string | boolean;
 type Flags = Record<string, FlagValue>;
@@ -38,6 +38,16 @@ interface RoomMessage {
   role: "creator" | "guest";
   text: string;
   created_at?: string;
+  attachments: RoomAttachment[];
+}
+
+interface RoomAttachment {
+  id: string;
+  filename: string;
+  media_type: string;
+  size: number;
+  sha256: string;
+  created_at?: string;
 }
 
 class CommandError extends Error {}
@@ -45,6 +55,8 @@ class CommandError extends Error {}
 const DEFAULT_BASE_URL = "https://getaroom.run";
 const VALUE_FLAGS = new Set([
   "base-url",
+  "attach",
+  "attachment",
   "task",
   "ttl",
   "invitation",
@@ -63,6 +75,8 @@ Usage:
   get-a-room join    [--invitation <link>]
   get-a-room task
   get-a-room say     --text "..."
+  get-a-room share   --file <path> [--text "..."]
+  get-a-room download --attachment <id> --out <path>
   get-a-room check   [--seconds 5]
   get-a-room status
   get-a-room finish  --file result.md
@@ -390,7 +404,7 @@ async function create(flags: Flags, json: boolean): Promise<void> {
     [],
   );
   const room = createdRoom(body);
-  const sessionId = await saveSession({
+  const session: Session = {
     version: 1,
     room_id: room.room_id,
     base_url: url,
@@ -402,7 +416,27 @@ async function create(flags: Flags, json: boolean): Promise<void> {
     expires_at: room.expires_at,
     last_number: 0,
     state: "open",
-  });
+  };
+  const sessionId = await saveSession(session);
+  const initialFile = flag(flags, "attach");
+  let initialAttachment: RoomAttachment | undefined;
+  if (initialFile) {
+    try {
+      initialAttachment = await uploadAndAttach(session, initialFile, `Initial context: ${basename(initialFile)}`);
+    } catch (error) {
+      try {
+        await requestJson(
+          `${url}/v1/rooms/${encodeURIComponent(room.room_id)}`,
+          { method: "DELETE", headers: bearer(room.creator_capability) },
+          [room.creator_capability],
+        );
+        await saveSessionTombstone(session, "closed");
+      } catch {
+        // Preserve the original error. An unclosed room still expires automatically.
+      }
+      throw error;
+    }
+  }
   if (json) {
     print({
       room_id: room.room_id,
@@ -414,6 +448,7 @@ async function create(flags: Flags, json: boolean): Promise<void> {
       guest_invitation_message: room.guest_invitation_message,
       observer_url: room.observer_url,
       observer_message: room.observer_message,
+      ...(initialAttachment ? { attachment: initialAttachment } : {}),
     }, true);
     return;
   }
@@ -503,6 +538,49 @@ async function say(flags: Flags, json: boolean): Promise<void> {
   print(json ? { sent: true, number } : `Message sent.`, json);
 }
 
+async function uploadAndAttach(session: Session, path: string, text: string): Promise<RoomAttachment> {
+  const data = await readFile(path);
+  const sha256 = createHash("sha256").update(data).digest("hex");
+  const filename = basename(path);
+  const requestBody = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+  const { body: uploadBody } = await requestJson(
+    roomPath(session.base_url, session.room_id, "attachments"),
+    {
+      method: "POST",
+      headers: {
+        ...bearer(session.invite),
+        "content-length": String(data.byteLength),
+        "content-type": "application/octet-stream",
+        "x-get-a-room-filename": Buffer.from(filename, "utf8").toString("base64url"),
+        "x-get-a-room-sha256": sha256,
+        "x-get-a-room-size": String(data.byteLength),
+      },
+      body: requestBody,
+    },
+    [session.invite],
+  );
+  const attachment = parseAttachment(isRecord(uploadBody) ? uploadBody.attachment : undefined);
+  const { body: messageBody } = await requestJson(
+    roomPath(session.base_url, session.room_id, "messages"),
+    jsonRequest(session.invite, { text, attachment_ids: [attachment.id] }),
+    [session.invite],
+  );
+  const number = isRecord(messageBody) && isRecord(messageBody.message) && Number.isInteger(messageBody.message.number)
+    ? messageBody.message.number as number
+    : undefined;
+  if (number === undefined) throw new CommandError("The room did not attach the file to a message");
+  session.last_number = Math.max(session.last_number, number);
+  await saveSession(session);
+  return attachment;
+}
+
+async function share(flags: Flags, json: boolean): Promise<void> {
+  const session = await loadSession(flags);
+  const path = required(flags, "file");
+  const attachment = await uploadAndAttach(session, path, flag(flags, "text") ?? `Shared file: ${basename(path)}`);
+  print(json ? { shared: true, attachment } : `Shared ${attachment.filename} (${attachment.id}).`, json);
+}
+
 function seconds(flags: Flags): number {
   const raw = flag(flags, "seconds") ?? "5";
   if (!/^\d+$/u.test(raw)) throw new CommandError("--seconds must be a number from 0 to 5");
@@ -524,7 +602,17 @@ function messages(value: unknown): RoomMessage[] {
       throw new CommandError("The room returned an invalid message");
     }
     const createdAt = typeof item.created_at === "string" ? item.created_at : undefined;
-    result.push({ number: item.number as number, role: item.role, text: item.text, ...(createdAt ? { created_at: createdAt } : {}) });
+    if (item.attachments !== undefined && !Array.isArray(item.attachments)) {
+      throw new CommandError("The room returned invalid attachments");
+    }
+    const attachments = (item.attachments ?? []).map(parseAttachment);
+    result.push({
+      number: item.number as number,
+      role: item.role,
+      text: item.text,
+      attachments,
+      ...(createdAt ? { created_at: createdAt } : {}),
+    });
   }
   return result;
 }
@@ -550,7 +638,93 @@ async function check(flags: Flags, json: boolean): Promise<void> {
     print("No new message yet.", false);
     return;
   }
-  print(found.map((message) => `${message.role === "creator" ? "Lead" : "Guest"}: ${safeTerminalText(message.text)}`).join("\n\n"), false);
+  print(found.map((message) => {
+    const files = message.attachments
+      .map((attachment) => `\n  File: ${safeTerminalText(attachment.filename)} (${attachment.id}, ${attachment.size} bytes)`)
+      .join("");
+    return `${message.role === "creator" ? "Lead" : "Guest"}: ${safeTerminalText(message.text)}${files}`;
+  }).join("\n\n"), false);
+}
+
+function parseAttachment(value: unknown): RoomAttachment {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    !/^a_[0-9a-f]{24}$/u.test(value.id) ||
+    typeof value.filename !== "string" ||
+    typeof value.media_type !== "string" ||
+    !Number.isInteger(value.size) ||
+    typeof value.sha256 !== "string"
+  ) {
+    throw new CommandError("The room returned an invalid attachment");
+  }
+  return {
+    id: value.id,
+    filename: value.filename,
+    media_type: value.media_type,
+    size: value.size as number,
+    sha256: value.sha256,
+    ...(typeof value.created_at === "string" ? { created_at: value.created_at } : {}),
+  };
+}
+
+async function listAttachments(session: Session): Promise<RoomAttachment[]> {
+  const { body } = await requestJson(
+    roomPath(session.base_url, session.room_id, "attachments"),
+    { headers: bearer(session.invite) },
+    [session.invite],
+  );
+  if (!isRecord(body) || !Array.isArray(body.attachments)) throw new CommandError("The room returned invalid attachments");
+  return body.attachments.map(parseAttachment);
+}
+
+async function downloadTo(session: Session, attachment: RoomAttachment, destination: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(roomPath(session.base_url, session.room_id, `attachments/${attachment.id}`), {
+      headers: bearer(session.invite),
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "network request failed";
+    throw new CommandError(redact(`Could not download attachment: ${detail}`, [session.invite]));
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new CommandError(`Attachment download failed (HTTP ${response.status})`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength !== attachment.size) throw new CommandError("Attachment download size did not match");
+  const actual = createHash("sha256").update(bytes).digest("hex");
+  if (actual !== attachment.sha256) throw new CommandError("Attachment download failed its integrity check");
+  await mkdir(dirname(destination), { recursive: true });
+  const temporary = `${destination}.get-a-room-${process.pid}-${randomBytes(5).toString("hex")}.tmp`;
+  const handle = await open(temporary, "wx", 0o600);
+  try {
+    await handle.writeFile(bytes);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await link(temporary, destination);
+    await rm(temporary);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    if (isRecord(error) && error.code === "EEXIST") {
+      throw new CommandError(`Refusing to overwrite existing file: ${destination}`);
+    }
+    throw error;
+  }
+}
+
+async function download(flags: Flags, json: boolean): Promise<void> {
+  const session = await loadSession(flags);
+  const id = required(flags, "attachment");
+  const attachment = (await listAttachments(session)).find((item) => item.id === id);
+  if (!attachment) throw new CommandError("The attachment was not found in this room");
+  const destination = resolve(required(flags, "out"));
+  await downloadTo(session, attachment, destination);
+  print(json ? { downloaded: true, attachment, out: destination } : `Downloaded ${attachment.filename} to ${destination}.`, json);
 }
 
 async function status(flags: Flags, json: boolean): Promise<void> {
@@ -566,6 +740,7 @@ async function status(flags: Flags, json: boolean): Promise<void> {
     role: session.role,
     state: body.status,
     messages: body.message_count,
+    files: body.attachment_count ?? 0,
     final_ready: body.has_final,
     expires_at: body.expires_at,
   };
@@ -605,6 +780,12 @@ async function collect(flags: Flags, json: boolean): Promise<void> {
   const actual = createHash("sha256").update(markdown, "utf8").digest("hex");
   if (actual !== expected) throw new CommandError("The final result failed its integrity check");
 
+  const attachments = await listAttachments(session);
+  const attachmentsDirectory = `${destination}.files`;
+  for (const attachment of attachments) {
+    await downloadTo(session, attachment, join(attachmentsDirectory, `${attachment.id}-${attachment.filename}`));
+  }
+
   await mkdir(dirname(destination), { recursive: true });
   const temporary = `${destination}.get-a-room-${process.pid}-${randomBytes(5).toString("hex")}.tmp`;
   let moved = false;
@@ -627,7 +808,18 @@ async function collect(flags: Flags, json: boolean): Promise<void> {
     if (!moved) await rm(temporary, { force: true });
   }
   await saveSessionTombstone(session, "collected");
-  print(json ? { collected: true, out: destination, sha256: actual } : `Result collected safely at ${destination}. The room is now closed.`, json);
+  print(
+    json
+      ? {
+          collected: true,
+          out: destination,
+          sha256: actual,
+          attachment_count: attachments.length,
+          ...(attachments.length > 0 ? { attachments_dir: attachmentsDirectory } : {}),
+        }
+      : `Result collected safely at ${destination}.${attachments.length > 0 ? ` ${attachments.length} attachment(s) saved in ${attachmentsDirectory}.` : ""} The room is now closed.`,
+    json,
+  );
 }
 
 async function showInvitation(flags: Flags, json: boolean): Promise<void> {
@@ -667,6 +859,8 @@ async function main(argv: string[]): Promise<void> {
     case "join": await joinRoom(flags, json); return;
     case "task": await task(flags, json); return;
     case "say": await say(flags, json); return;
+    case "share": await share(flags, json); return;
+    case "download": await download(flags, json); return;
     case "check": await check(flags, json); return;
     case "status": await status(flags, json); return;
     case "finish": await finish(flags, json); return;

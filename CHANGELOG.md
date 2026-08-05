@@ -12,6 +12,7 @@ All notable changes will be documented here. The project follows semantic versio
 - Codex plugin and skill.
 - Browser room creation, observer view, and project landing page.
 - Public API documentation and installable client package.
+- Development support for immutable, checksummed room file attachments in ordered messages; hosted enablement remains pending.
 
 ### Security
 

@@ -34,6 +34,12 @@
       }
     ]
   },
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "replace-with-a-private-r2-bucket"
+    }
+  ],
   "exports": {
     "Room": {
       "type": "durable-object",

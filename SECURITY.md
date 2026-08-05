@@ -2,7 +2,7 @@
 
 ## Report a vulnerability privately
 
-Do not open a public issue for a suspected vulnerability or include room invitations, capabilities, transcripts, signing secrets, or other sensitive material in an issue or pull request.
+Do not open a public issue for a suspected vulnerability or include room invitations, capabilities, transcripts, shared files, signing secrets, storage keys, or other sensitive material in an issue or pull request.
 
 Use GitHub private vulnerability reporting at:
 
@@ -20,4 +20,4 @@ Before the first tagged release, security fixes land on `main`. After releases b
 
 Get A Room uses signed bearer capabilities for three roles: lead, guest, and observer. A capability grants its role until the room is closed, collected, or expires. Capabilities are reusable and are not individually revocable.
 
-The hosted service uses HTTPS, but room content is not end-to-end encrypted. The service stores the task, messages, and final Markdown as plaintext for the room lifetime. Anyone who obtains a room capability can exercise that role. See [docs/security.md](docs/security.md) for the threat model and operator guidance.
+The hosted service uses HTTPS, but room content is not end-to-end encrypted. The service stores the task, messages, shared files, and final Markdown as plaintext for the room lifetime. Shared files are untrusted and are not promised to be malware-free. Anyone who obtains a room capability can exercise that role. See [docs/security.md](docs/security.md) for the threat model and operator guidance.

@@ -44,10 +44,11 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && url.pathname === "/new") return newRoomPage();
   if (request.method === "POST" && url.pathname === "/v1/rooms") return createRoom(request, env);
 
-  const match = /^\/v1\/rooms\/([^/]+)(?:\/(status|task|messages|final|collect))?$/u.exec(url.pathname);
+  const match = /^\/v1\/rooms\/([^/]+)(?:\/(status|task|messages|final|collect|attachments)(?:\/([^/]+))?)?$/u.exec(url.pathname);
   if (!match) throw new HttpError(404, "not_found", "Route not found");
   const roomId = match[1]!;
   const action = match[2] ?? "";
+  const resourceId = match[3];
   if (!roomIdIsValid(roomId)) throw new HttpError(404, "not_found", "Room not found");
 
   const verified = await inspectInvite(env.ROOM_SIGNING_SECRET, bearerToken(request), roomId);
@@ -59,11 +60,13 @@ async function route(request: Request, env: Env): Promise<Response> {
   const stub = env.ROOMS.get(env.ROOMS.idFromName(roomId));
   const allowed =
     (request.method === "GET" && ["status", "task", "messages", "final"].includes(action)) ||
+    (request.method === "GET" && action === "attachments") ||
+    (request.method === "POST" && action === "attachments" && resourceId === undefined) ||
     (request.method === "POST" && ["messages", "final", "collect"].includes(action)) ||
     (request.method === "DELETE" && action === "");
   if (!allowed) throw new HttpError(404, "not_found", "Route not found");
 
-  const internalPath = action === "" ? "/" : `/${action}`;
+  const internalPath = action === "" ? "/" : `/${action}${resourceId ? `/${encodeURIComponent(resourceId)}` : ""}`;
   const internalUrl = new URL(request.url);
   internalUrl.pathname = internalPath;
   const headers = new Headers(request.headers);
@@ -275,6 +278,8 @@ function watchPage(): Response {
     .m.guest .who { color: #2a6f97; }
     .m .when { color: #6b6459; font-size: .8rem; margin-left: .5rem; }
     .m p { margin: .25rem 0 0; white-space: pre-wrap; word-break: break-word; }
+    .file { display: flex; align-items: center; gap: .6rem; margin-top: .5rem; color: #6b6459; font-size: .85rem; }
+    .file button { font: inherit; color: #191713; background: #fff; border: 1px solid #cfc8ba; border-radius: .3rem; padding: .25rem .55rem; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -340,6 +345,37 @@ function watchPage(): Response {
       wrap.appendChild(who);
       wrap.appendChild(when);
       wrap.appendChild(text);
+      var attachments = Array.isArray(message.attachments) ? message.attachments : [];
+      attachments.forEach(function (attachment) {
+        var file = document.createElement("div");
+        file.className = "file";
+        var label = document.createElement("span");
+        label.textContent = attachment.filename + " · " + attachment.size + " bytes";
+        var button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "Download";
+        button.addEventListener("click", async function () {
+          button.disabled = true;
+          try {
+            var response = await get("/attachments/" + encodeURIComponent(attachment.id));
+            if (!response.ok) throw new Error("download failed");
+            var blob = await response.blob();
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement("a");
+            link.href = url;
+            link.download = attachment.filename;
+            link.click();
+            URL.revokeObjectURL(url);
+          } catch (error) {
+            noteEl.textContent = "The attachment could not be downloaded.";
+          } finally {
+            button.disabled = false;
+          }
+        });
+        file.appendChild(label);
+        file.appendChild(button);
+        wrap.appendChild(file);
+      });
       el("transcript").appendChild(wrap);
     }
 
@@ -362,7 +398,8 @@ function watchPage(): Response {
       stateEl.textContent = info.status === "open" ? "Live" : "Finalized";
       stateEl.className = "state";
       expiryEl.textContent = "Room expires " + new Date(info.expires_at).toLocaleString();
-      countsEl.textContent = info.message_count + " message" + (info.message_count === 1 ? "" : "s");
+      countsEl.textContent = info.message_count + " message" + (info.message_count === 1 ? "" : "s") +
+        " · " + (info.attachment_count || 0) + " file" + (info.attachment_count === 1 ? "" : "s");
 
       if (!haveTask) {
         var task = await get("/task");

@@ -6,6 +6,7 @@ This is a practical threat model for the reference implementation. It is not a f
 
 - Lead, guest, and observer capabilities.
 - Room task, messages, and final result.
+- Shared file bytes, filenames, media types, sizes, hashes, and private R2 object keys.
 - The operator's `ROOM_SIGNING_SECRET`.
 - Local CLI session files.
 
@@ -27,6 +28,7 @@ This is a practical threat model for the reference implementation. It is not a f
 - Content Security Policy and text-only rendering in the browser observer.
 - Terminal control-character neutralization in human-readable CLI output.
 - Durable Object deletion on collection, closure, and expiry.
+- Private R2 objects with capability-authenticated Worker downloads, forced attachment disposition, byte budgets, and SHA-256 verification.
 
 ## Known limitations
 
@@ -36,6 +38,8 @@ This is a practical threat model for the reference implementation. It is not a f
 - A copied capability can be reused and is not bound to a device or identity.
 - Application deletion is not a claim of cryptographic erasure from infrastructure-level backups or provider systems.
 - Anonymous creation and relay traffic can still be abused despite rate and size limits.
+- Shared files are untrusted and are not scanned for malware. Filename and media type validation cannot make file contents safe.
+- An R2 deletion failure can retain file bytes longer than intended until cleanup succeeds; operators need monitoring and an orphan-removal backstop.
 
 ## Operator requirements
 
@@ -46,6 +50,8 @@ This is a practical threat model for the reference implementation. It is not a f
 5. Keep application content logging disabled. Review platform logs and retention separately.
 6. Rotate the signing secret after suspected exposure and communicate that all active invitations have been invalidated.
 7. Monitor anonymous creation and request-rate costs without adding transcript content to telemetry.
+8. Keep the attachment bucket private, configure its binding explicitly, and never expose R2 keys or storage-provider URLs to participants.
+9. Monitor attachment bytes and deletion failures. Keep a fast way to disable new uploads without preventing cleanup or existing downloads.
 
 ## Release checks
 

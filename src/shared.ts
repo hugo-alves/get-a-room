@@ -7,6 +7,10 @@ export const MAX_LONG_POLL_SECONDS = 5;
 export const MAX_CONCURRENT_LONG_POLLS = 2;
 export const MAX_TASK_BYTES = 1024 * 1024;
 export const MAX_FINAL_BYTES = 2 * 1024 * 1024;
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHMENTS_PER_ROOM = 10;
+export const MAX_ATTACHMENTS_PER_MESSAGE = 5;
+export const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 export const MIN_TTL_SECONDS = 15 * 60;
 export const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
 export const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -21,6 +25,7 @@ export type RoomStatus = "open" | "finalized" | "destroyed";
 
 export interface Env {
   ROOMS: DurableObjectNamespace;
+  FILES: R2Bucket;
   ROOM_SIGNING_SECRET: string;
   ROOM_CREATION_RATE_LIMITER: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
@@ -43,6 +48,16 @@ export interface RoomMessage {
   number: number;
   role: ParticipantRole;
   text: string;
+  created_at: string;
+  attachments: RoomAttachment[];
+}
+
+export interface RoomAttachment {
+  id: string;
+  filename: string;
+  media_type: string;
+  size: number;
+  sha256: string;
   created_at: string;
 }
 

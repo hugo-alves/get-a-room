@@ -221,12 +221,20 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [text]
+              anyOf:
+                - required: [text]
+                - required: [attachment_ids]
               properties:
                 text:
                   type: string
-                  minLength: 1
                   description: UTF-8 content is limited to 128 KiB.
+                attachment_ids:
+                  type: array
+                  maxItems: 5
+                  uniqueItems: true
+                  items:
+                    type: string
+                    pattern: "^a_[0-9a-f]{24}$"
       responses:
         "201":
           description: Message added
@@ -248,6 +256,123 @@ paths:
           $ref: "#/components/responses/ContentTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/rooms/{roomId}/attachments:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    get:
+      tags: [Rooms]
+      operationId: listRoomAttachments
+      summary: List files attached to room messages
+      security:
+        - roomCapability: []
+      responses:
+        "200":
+          description: Committed room attachments
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attachments]
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RoomAttachment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          $ref: "#/components/responses/RoomGone"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Rooms]
+      operationId: uploadRoomAttachment
+      summary: Upload a file for a later participant message
+      description: >-
+        Lead and guest only. The upload remains invisible until the same role
+        associates its attachment ID with a message. Files are limited to 10 MiB.
+      security:
+        - roomCapability: []
+      parameters:
+        - name: X-Get-A-Room-Filename
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Base64url-encoded UTF-8 display filename.
+        - name: X-Get-A-Room-Size
+          in: header
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10485760
+        - name: X-Get-A-Room-Sha256
+          in: header
+          required: true
+          schema:
+            $ref: "#/components/schemas/Sha256"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: File uploaded but not yet attached to a message
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attachment]
+                properties:
+                  attachment:
+                    $ref: "#/components/schemas/RoomAttachment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/ContentTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/rooms/{roomId}/attachments/{attachmentId}:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^a_[0-9a-f]{24}$"
+    get:
+      tags: [Rooms]
+      operationId: downloadRoomAttachment
+      summary: Download a committed room attachment
+      security:
+        - roomCapability: []
+      responses:
+        "200":
+          description: Attachment bytes with download and SHA-256 headers
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Attachment not found or not committed
+        "410":
+          $ref: "#/components/responses/RoomGone"
         "429":
           $ref: "#/components/responses/RateLimited"
   /v1/rooms/{roomId}/final:
@@ -437,6 +562,9 @@ components:
         - message_count
         - message_bytes
         - message_bytes_limit
+        - attachment_count
+        - attachment_bytes
+        - attachment_bytes_limit
         - last_number
         - has_final
       properties:
@@ -462,6 +590,16 @@ components:
         message_bytes_limit:
           type: integer
           const: 8388608
+        attachment_count:
+          type: integer
+          minimum: 0
+          maximum: 10
+        attachment_bytes:
+          type: integer
+          minimum: 0
+        attachment_bytes_limit:
+          type: integer
+          const: 26214400
         last_number:
           type: integer
           minimum: 0
@@ -469,7 +607,7 @@ components:
           type: boolean
     RoomMessage:
       type: object
-      required: [number, role, text, created_at]
+      required: [number, role, text, created_at, attachments]
       properties:
         number:
           type: integer
@@ -479,6 +617,31 @@ components:
           enum: [creator, guest]
         text:
           type: string
+        created_at:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/RoomAttachment"
+    RoomAttachment:
+      type: object
+      required: [id, filename, media_type, size, sha256, created_at]
+      properties:
+        id:
+          type: string
+          pattern: "^a_[0-9a-f]{24}$"
+        filename:
+          type: string
+        media_type:
+          type: string
+        size:
+          type: integer
+          minimum: 0
+          maximum: 10485760
+        sha256:
+          $ref: "#/components/schemas/Sha256"
         created_at:
           type: string
           format: date-time

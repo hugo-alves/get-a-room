@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
@@ -28,6 +29,12 @@ async function temp(): Promise<string> {
 function send(response: ServerResponse, value: unknown, status = 200): void {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(value));
+}
+
+async function requestBytes(request: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
 }
 
 async function server(
@@ -113,6 +120,115 @@ describe("get-a-room", () => {
       expect(saved.observer_url).toContain(`${mock.url}/watch#invite=`);
       expect((await stat(home)).mode & 0o777).toBe(0o700);
       expect((await stat(join(home, "sessions", `${value.session_id}.json`))).mode & 0o777).toBe(0o600);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("shares initial and midway files and downloads them safely", async () => {
+    const home = await temp();
+    const task = join(home, "task.md");
+    const initial = join(home, "brief.txt");
+    const midway = join(home, "analysis.csv");
+    const downloaded = join(home, "downloaded.csv");
+    await writeFile(task, "Review the files.", "utf8");
+    await writeFile(initial, "brief contents", "utf8");
+    await writeFile(midway, "answer,42\n", "utf8");
+    const creator = invite("creator");
+    const guest = invite("guest");
+    const observer = invite("observer");
+    const attachments: Array<{
+      id: string;
+      filename: string;
+      media_type: string;
+      size: number;
+      sha256: string;
+      created_at: string;
+      bytes: Buffer;
+    }> = [];
+    let messageNumber = 0;
+    const mock = await server((request, response) => {
+      void (async () => {
+        const origin = `http://${request.headers.host}`;
+        if (request.method === "POST" && request.url === "/v1/rooms") {
+          const guestUrl = `${origin}/join#invite=${encodeURIComponent(guest)}`;
+          return send(response, {
+            room_id: ROOM_ID,
+            expires_at: "2030-01-01T00:00:00.000Z",
+            creator_capability: creator,
+            guest_invitation_url: guestUrl,
+            guest_invitation_message: `Join me with ${guestUrl}`,
+            observer_url: `${origin}/watch#invite=${encodeURIComponent(observer)}`,
+            observer_message: `Watch live at ${origin}/watch`,
+          }, 201);
+        }
+        if (request.method === "POST" && request.url === `/v1/rooms/${ROOM_ID}/attachments`) {
+          const bytes = await requestBytes(request);
+          const id = `a_${String(attachments.length + 1).padStart(24, "0")}`;
+          const filename = Buffer.from(String(request.headers["x-get-a-room-filename"]), "base64url").toString("utf8");
+          const attachment = {
+            id,
+            filename,
+            media_type: "application/octet-stream",
+            size: bytes.byteLength,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+            created_at: "2030-01-01T00:00:00.000Z",
+            bytes,
+          };
+          attachments.push(attachment);
+          return send(response, { attachment }, 201);
+        }
+        if (request.method === "POST" && request.url === `/v1/rooms/${ROOM_ID}/messages`) {
+          const body = JSON.parse((await requestBytes(request)).toString("utf8")) as { text: string; attachment_ids: string[] };
+          const attached = attachments.filter((attachment) => body.attachment_ids.includes(attachment.id));
+          messageNumber += 1;
+          return send(response, {
+            message: {
+              number: messageNumber,
+              role: "creator",
+              text: body.text,
+              created_at: "2030-01-01T00:00:00.000Z",
+              attachments: attached,
+            },
+          }, 201);
+        }
+        if (request.method === "GET" && request.url === `/v1/rooms/${ROOM_ID}/attachments`) {
+          return send(response, { attachments });
+        }
+        const downloadMatch = new RegExp(`^/v1/rooms/${ROOM_ID}/attachments/(a_[0-9]+)$`).exec(request.url ?? "");
+        if (request.method === "GET" && downloadMatch?.[1]) {
+          const attachment = attachments.find((item) => item.id === downloadMatch[1]);
+          if (!attachment) return send(response, { error: "not_found" }, 404);
+          response.writeHead(200, {
+            "content-type": attachment.media_type,
+            "content-length": String(attachment.size),
+            "x-content-sha256": attachment.sha256,
+          });
+          response.end(attachment.bytes);
+          return;
+        }
+        send(response, { error: "not_found" }, 404);
+      })().catch((error: unknown) => send(response, { error: String(error) }, 500));
+    });
+
+    try {
+      const created = JSON.parse(await run([
+        "create", "--base-url", mock.url, "--task", task, "--attach", initial, "--json",
+      ], home)) as { session_id: string; attachment: { id: string } };
+      expect(created.attachment.id).toBe("a_000000000000000000000001");
+
+      const shared = JSON.parse(await run([
+        "share", "--session", created.session_id, "--file", midway, "--text", "Updated totals", "--json",
+      ], home)) as { attachment: { id: string } };
+      expect(shared.attachment.id).toBe("a_000000000000000000000002");
+
+      await run([
+        "download", "--session", created.session_id, "--attachment", shared.attachment.id, "--out", downloaded, "--json",
+      ], home);
+      await expect(readFile(downloaded, "utf8")).resolves.toBe("answer,42\n");
+      await expect(run([
+        "download", "--session", created.session_id, "--attachment", shared.attachment.id, "--out", downloaded, "--json",
+      ], home)).rejects.toThrow("Refusing to overwrite existing file");
     } finally {
       await mock.close();
     }

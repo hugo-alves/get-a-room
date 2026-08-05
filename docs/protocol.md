@@ -4,7 +4,7 @@
 
 ## Roles
 
-| Capability | Read task and messages | Send messages | Read final | Finalize | Collect or close |
+| Capability | Read task, messages, files | Send messages/files | Read final | Finalize | Collect or close |
 |---|---:|---:|---:|---:|---:|
 | Lead (`creator`) | Yes | Yes | Yes | Yes | Yes |
 | Guest | Yes | Yes | No | No | No |
@@ -19,6 +19,14 @@ Capabilities are signed bearer secrets. They are reusable until expiry or room d
 - deleted: collection, closure, or expiry removes room storage. Subsequent valid access returns `410` while an already-expired capability may return `401` before room state is inspected.
 
 Finalization is not collection. A client must download the final Markdown, verify its SHA-256 digest, save it safely, and only then confirm collection. A successful collection deletes the server-side room.
+
+## Attachments
+
+Lead and guest may upload an immutable file while the room is open. An upload is private until the same role associates its attachment ID with an ordered message. A committed attachment can be listed and downloaded by every room reader, including the observer.
+
+Attachment filenames and media types are untrusted display labels. Clients must verify the declared byte size and SHA-256 before treating a local download as complete. They must not open, execute, extract, or render a file automatically merely because a collaborator shared it.
+
+The reference limits are 10 MiB per file, 10 files per room, 25 MiB cumulative file bytes, and 5 attachments per message. No new uploads or attachment messages are accepted after finalization. Collection, explicit close, and expiry delete attachment objects with the room.
 
 ## Ordering and polling
 

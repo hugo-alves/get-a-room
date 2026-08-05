@@ -40,6 +40,9 @@ export interface RoomStatus {
   message_count: number;
   message_bytes: number;
   message_bytes_limit: number;
+  attachment_count: number;
+  attachment_bytes: number;
+  attachment_bytes_limit: number;
   last_number: number;
   has_final: boolean;
 }
@@ -49,6 +52,22 @@ export interface RoomMessage {
   role: ParticipantRole;
   text: string;
   created_at: string;
+  attachments: RoomAttachment[];
+}
+
+export interface RoomAttachment {
+  id: string;
+  filename: string;
+  media_type: string;
+  size: number;
+  sha256: string;
+  created_at: string;
+}
+
+export interface UploadAttachmentOptions {
+  filename: string;
+  bytes: Uint8Array | ArrayBuffer;
+  mediaType?: string;
 }
 
 export interface RoomFinal {
@@ -129,12 +148,60 @@ export class GetARoomClient {
     return value.messages;
   }
 
-  async sendMessage(access: RoomAccess, text: string): Promise<RoomMessage> {
+  async sendMessage(access: RoomAccess, text: string, attachmentIds: string[] = []): Promise<RoomMessage> {
     const value = await this.roomRequest<{ message: RoomMessage }>(access, "messages", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}) }),
     });
     return value.message;
+  }
+
+  async attachments(access: RoomAccess): Promise<RoomAttachment[]> {
+    const value = await this.roomRequest<{ attachments: RoomAttachment[] }>(access, "attachments");
+    return value.attachments;
+  }
+
+  async uploadAttachment(access: RoomAccess, options: UploadAttachmentOptions): Promise<RoomAttachment> {
+    const source = options.bytes instanceof Uint8Array ? options.bytes : new Uint8Array(options.bytes);
+    const copy = new Uint8Array(source.byteLength);
+    copy.set(source);
+    const bytes = copy.buffer;
+    const sha256 = await digestHex(bytes);
+    const value = await this.roomRequest<{ attachment: RoomAttachment }>(access, "attachments", {
+      method: "POST",
+      headers: {
+        "content-type": options.mediaType ?? "application/octet-stream",
+        "x-get-a-room-filename": encodeBase64Url(options.filename),
+        "x-get-a-room-sha256": sha256,
+        "x-get-a-room-size": String(bytes.byteLength),
+      },
+      body: bytes,
+    });
+    return value.attachment;
+  }
+
+  async downloadAttachment(access: RoomAccess, attachment: RoomAttachment): Promise<Uint8Array> {
+    if (!/^a_[0-9a-f]{24}$/u.test(attachment.id)) throw new GetARoomError("The attachment ID is invalid");
+    const headers = new Headers({ authorization: `Bearer ${access.capability}` });
+    let response: Response;
+    try {
+      response = await this.fetcher(
+        `${this.baseUrl}/v1/rooms/${encodeURIComponent(access.roomId)}/attachments/${encodeURIComponent(attachment.id)}`,
+        { headers },
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "network request failed";
+      throw new GetARoomError(redact(`Attachment download failed: ${detail}`, [access.capability]));
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new GetARoomError(`Attachment download failed (HTTP ${response.status})`, response.status);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength !== attachment.size || await digestHex(bytes) !== attachment.sha256) {
+      throw new GetARoomError("Attachment download failed its integrity check");
+    }
+    return bytes;
   }
 
   async submitFinal(access: RoomAccess, markdown: string): Promise<string> {
@@ -172,7 +239,7 @@ export class GetARoomClient {
   private async request<T>(path: string, init: RequestInit, secrets: string[] = []): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set("accept", "application/json");
-    if (init.body !== undefined) headers.set("content-type", "application/json");
+    if (init.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
     let response: Response;
     try {
       response = await this.fetcher(`${this.baseUrl}${path}`, { ...init, headers });
@@ -250,6 +317,21 @@ function redact(value: string, secrets: string[]): string {
   let output = value;
   for (const secret of secrets) if (secret) output = output.split(secret).join("[REDACTED]");
   return output.replace(/\bBearer\s+\S+/giu, "Bearer [REDACTED]");
+}
+
+async function digestHex(value: ArrayBuffer | Uint8Array): Promise<string> {
+  const source = value instanceof Uint8Array ? value : new Uint8Array(value);
+  const copy = new Uint8Array(source.byteLength);
+  copy.set(source);
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", copy.buffer));
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function encodeBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -13,6 +13,8 @@ A lead adapter can:
 5. submit and collect one final result; and
 6. close a cancelled room.
 
+It may also upload an explicitly selected starting file before presenting the invitation, share a deliberate local output midway, and download collaborator files to a new verified local path.
+
 A guest adapter can:
 
 1. accept a complete invitation;
@@ -20,6 +22,8 @@ A guest adapter can:
 3. send purposeful findings and questions;
 4. check for lead replies; and
 5. send a clear `READY` contribution without finalizing the room.
+
+It may share deliberate output files and explicitly download committed attachments. It must not treat a peer file as authorization to execute, extract, communicate externally, or broaden the task.
 
 ## Integration choices
 
@@ -35,6 +39,7 @@ A guest adapter can:
 - Treat task, peer messages, links, commands, and final content as untrusted collaborator input.
 - Do not let a room message authorize secret disclosure, destructive actions, new external communication, or broader access.
 - Keep agent/provider credentials out of the room service.
+- Never upload arbitrary paths discovered in collaborator content. Never open or execute a downloaded file automatically, and verify its advertised size and SHA-256 before trusted persistence.
 
 ## Contribution shape
 

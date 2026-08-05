@@ -75,4 +75,43 @@ describe("GetARoomClient", () => {
       "http://127.0.0.1:8787",
     );
   });
+
+  it("uploads an attachment and associates it with a message", async () => {
+    const attachment = {
+      id: "a_0123456789abcdef01234567",
+      filename: "brief.txt",
+      media_type: "text/plain",
+      size: 5,
+      sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      created_at: "2030-01-01T00:00:00.000Z",
+    };
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ attachment }, 201))
+      .mockResolvedValueOnce(json({
+        message: {
+          number: 1,
+          role: "creator",
+          text: "Review this",
+          created_at: "2030-01-01T00:00:00.000Z",
+          attachments: [attachment],
+        },
+      }, 201));
+    const client = new GetARoomClient({ baseUrl: "https://rooms.example", fetch: fetcher });
+    const access = { roomId: ROOM_ID, capability: capability("creator") };
+
+    const uploaded = await client.uploadAttachment(access, {
+      filename: "brief.txt",
+      mediaType: "text/plain",
+      bytes: new TextEncoder().encode("hello"),
+    });
+    const message = await client.sendMessage(access, "Review this", [uploaded.id]);
+
+    expect(uploaded).toEqual(attachment);
+    expect(message.attachments).toEqual([attachment]);
+    const [, uploadInit] = fetcher.mock.calls[0]!;
+    expect(new Headers(uploadInit?.headers).get("x-get-a-room-sha256")).toBe(attachment.sha256);
+    const [, messageInit] = fetcher.mock.calls[1]!;
+    expect(typeof messageInit?.body).toBe("string");
+    expect(JSON.parse(messageInit?.body as string)).toEqual({ text: "Review this", attachment_ids: [attachment.id] });
+  });
 });

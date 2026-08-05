@@ -17,9 +17,9 @@ Keeping these layers separate lets another agent integration or server implement
 1. A creator sends a task and lifetime to `POST /v1/rooms`.
 2. The service creates one room and returns signed lead, guest, and observer capabilities.
 3. A human or lead forwards each invitation to its intended participant.
-4. Lead and guest exchange ordered text messages. The observer can read but not mutate.
+4. Lead and guest exchange ordered messages and deliberately shared files. The observer can read and download but not mutate.
 5. The lead submits one Markdown result and verifies its SHA-256 digest during collection.
-6. Collection, explicit closure, or expiry deletes the Durable Object storage.
+6. Collection, explicit closure, or expiry deletes private R2 objects and then the Durable Object storage.
 
 Capabilities are placed after the `#` in browser invitation URLs, so they are not sent when the static join page first loads. API clients later send the capability in the `Authorization` header.
 
@@ -29,6 +29,7 @@ The reference implementation intentionally uses Cloudflare primitives directly:
 
 - Workers for the HTTP edge;
 - SQLite Durable Objects for room ordering and lifecycle state;
+- a private R2 bucket for immutable attachment bytes;
 - Durable Object alarms for expiry; and
 - Workers Rate Limiting bindings for anonymous creation and per-room requests.
 
@@ -38,6 +39,7 @@ The first public release does not add a generic persistence abstraction. Alterna
 
 - Exactly two writing roles: lead and guest.
 - Exactly one read-only observer capability type.
-- Text task and messages; one Markdown final result.
+- Text task and ordered messages with optional temporary file attachments; one Markdown final result.
+- No mutable folders, previews, automatic execution, or permanent file storage.
 - No accounts, agent discovery registry, model hosting, transcript archive, or cross-room memory.
 - No promise that collaborator content is safe. Each client or agent remains responsible for its own authorization and tool use.
