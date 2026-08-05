@@ -2,7 +2,7 @@ import {
   HttpError,
   MAX_FINAL_BYTES,
   MAX_MESSAGE_BYTES,
-  MAX_MESSAGES,
+  MAX_TOTAL_MESSAGE_BYTES,
   MAX_TASK_BYTES,
   errorResponse,
   isParticipantRole,
@@ -104,13 +104,15 @@ export class Room implements DurableObject {
 
   private status(meta: MetaRow): Response {
     const count = this.messageCount();
+    const messageBytes = this.messageBytes();
     return json({
       room_id: meta.room_id,
       status: meta.state,
       created_at: new Date(meta.created_at).toISOString(),
       expires_at: new Date(meta.expires_at).toISOString(),
       message_count: count,
-      message_limit: MAX_MESSAGES,
+      message_bytes: messageBytes,
+      message_bytes_limit: MAX_TOTAL_MESSAGE_BYTES,
       last_number: count,
       has_final: meta.final_sha256 !== null,
     });
@@ -144,8 +146,12 @@ export class Room implements DurableObject {
     if (meta.state !== "open") throw new HttpError(409, "room_finalized", "Room is finalized");
     const body = await readJson(request);
     const text = requiredString(body.text, "text", MAX_MESSAGE_BYTES);
+    const textBytes = new TextEncoder().encode(text).byteLength;
     this.requireCurrentOpenRoom();
-    if (this.messageCount() >= MAX_MESSAGES) throw new HttpError(409, "message_limit", "Message limit reached");
+    const currentBytes = this.messageBytes();
+    if (currentBytes + textBytes > MAX_TOTAL_MESSAGE_BYTES) {
+      throw new HttpError(413, "room_message_budget_exceeded", "Cumulative room message budget exceeded");
+    }
     const createdAt = Date.now();
     this.sql.exec("INSERT INTO messages (role, text, created_at) VALUES (?, ?, ?)", role, text, createdAt);
     const row = [...this.sql.exec<MessageRow>("SELECT number, role, text, created_at FROM messages ORDER BY number DESC LIMIT 1")][0];
@@ -154,7 +160,7 @@ export class Room implements DurableObject {
   }
 
   private async submitFinal(request: Request, meta: MetaRow, role: string | null): Promise<Response> {
-    this.requireRole(role, "proposer");
+    this.requireRole(role, "creator");
     if (meta.state !== "open") throw new HttpError(409, "room_finalized", "Room is already finalized");
     const body = await readJson(request);
     const markdown = requiredString(body.markdown, "markdown", MAX_FINAL_BYTES);
@@ -225,6 +231,10 @@ export class Room implements DurableObject {
     return [...this.sql.exec<CountRow>("SELECT COUNT(*) AS count FROM messages")][0]?.count ?? 0;
   }
 
+  private messageBytes(): number {
+    return [...this.sql.exec<CountRow>("SELECT COALESCE(SUM(LENGTH(CAST(text AS BLOB))), 0) AS count FROM messages")][0]?.count ?? 0;
+  }
+
   private messagesAfter(after: number): RoomMessage[] {
     return [...this.sql.exec<MessageRow>(
       "SELECT number, role, text, created_at FROM messages WHERE number > ? ORDER BY number ASC",
@@ -237,7 +247,7 @@ export class Room implements DurableObject {
     return role;
   }
 
-  private requireRole(role: string | null, expected: "creator" | "proposer"): void {
+  private requireRole(role: string | null, expected: "creator"): void {
     if (role !== expected) throw new HttpError(403, "forbidden", `${expected} invite required`);
   }
 }

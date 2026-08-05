@@ -3,8 +3,31 @@
   "name": "get-a-room",
   "main": "src/worker.ts",
   "compatibility_date": "2026-08-05",
-  "workers_dev": true,
+  "workers_dev": false,
   "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "getaroom.run",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.getaroom.run",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "PUBLIC_BASE_URL": "https://getaroom.run"
+  },
+  "ratelimits": [
+    {
+      "name": "ROOM_CREATION_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {

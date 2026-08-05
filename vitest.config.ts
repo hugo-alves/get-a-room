@@ -11,7 +11,6 @@ export default defineConfig({
             miniflare: {
               bindings: {
                 ROOM_SIGNING_SECRET: "test-signing-secret-at-least-32-bytes-long",
-                ROOM_CREATOR_KEY: "test-creator-key-at-least-32-bytes-long",
               },
             },
           }),

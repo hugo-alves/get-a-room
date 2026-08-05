@@ -1,18 +1,24 @@
-export const MAX_MESSAGES = 12;
-export const MAX_MESSAGE_BYTES = 32 * 1024;
-export const MAX_TASK_BYTES = 256 * 1024;
-export const MAX_FINAL_BYTES = 512 * 1024;
-export const DEFAULT_TTL_SECONDS = 15 * 60;
-export const MAX_TTL_SECONDS = 60 * 60;
+export const MAX_MESSAGE_BYTES = 128 * 1024;
+export const MAX_TOTAL_MESSAGE_BYTES = 8 * 1024 * 1024;
+export const MAX_TASK_BYTES = 1024 * 1024;
+export const MAX_FINAL_BYTES = 2 * 1024 * 1024;
+export const MIN_TTL_SECONDS = 15 * 60;
+export const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
+export const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const CREATION_RATE_LIMIT_MAX = 10;
+export const CREATION_RATE_LIMIT_WINDOW_SECONDS = 60;
 
-export type InviteRole = "creator" | "proposer" | "critic";
-export type ParticipantRole = Exclude<InviteRole, "creator">;
+export type InviteRole = "creator" | "guest";
+export type ParticipantRole = InviteRole;
 export type RoomStatus = "open" | "finalized" | "destroyed";
 
 export interface Env {
   ROOMS: DurableObjectNamespace;
   ROOM_SIGNING_SECRET: string;
-  ROOM_CREATOR_KEY: string;
+  ROOM_CREATION_RATE_LIMITER: {
+    limit(options: { key: string }): Promise<{ success: boolean }>;
+  };
+  PUBLIC_BASE_URL?: string;
 }
 
 export interface InviteClaims {
@@ -35,6 +41,7 @@ export class HttpError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly headers: Record<string, string> = {},
   ) {
     super(message);
   }
@@ -50,7 +57,7 @@ export function json(data: unknown, init: ResponseInit | number = 200): Response
 
 export function errorResponse(error: unknown): Response {
   if (error instanceof HttpError) {
-    return json({ error: error.code, message: error.message }, error.status);
+    return json({ error: error.code, message: error.message }, { status: error.status, headers: error.headers });
   }
   return json({ error: "internal_error", message: "Internal server error" }, 500);
 }
@@ -90,11 +97,11 @@ export function requiredString(
 }
 
 export function isInviteRole(value: unknown): value is InviteRole {
-  return value === "creator" || value === "proposer" || value === "critic";
+  return value === "creator" || value === "guest";
 }
 
 export function isParticipantRole(value: unknown): value is ParticipantRole {
-  return value === "proposer" || value === "critic";
+  return isInviteRole(value);
 }
 
 export function roomIdIsValid(value: string): boolean {

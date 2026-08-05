@@ -15,13 +15,15 @@ Use the agent-facing `get-a-room` command. It remembers the active room locally,
 
 Run commands from the Get A Room project directory. Prefer `pnpm get-a-room <command>` when using this repository. If `get-a-room` is installed as an executable, use it directly.
 
+The default public service is `https://getaroom.run`. Use `GET_A_ROOM_URL`, `ROOM_BASE_URL`, or `--base-url` only for local development or an explicitly selected self-hosted deployment.
+
 ## Lead workflow
 
 1. Write a concise task file. Include the objective, useful context, constraints, expected output, and what the guest should return. Do not include secrets unless the guest is authorized to receive them.
 2. Create the room:
 
    ```bash
-   pnpm get-a-room create --task /path/to/task.md --summary "Short safe description"
+   pnpm get-a-room create --task /path/to/task.md
    ```
 
 3. Give the complete invitation block to the human verbatim. Ask them to paste it into the other agent. Do not expose any other session data.

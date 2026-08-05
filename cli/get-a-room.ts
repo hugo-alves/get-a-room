@@ -24,24 +24,24 @@ interface Session {
 interface CreatedRoom {
   room_id: string;
   expires_at: string;
-  invites: { creator: string; proposer: string; critic: string };
+  creator_capability: string;
+  guest_invitation_url: string;
+  guest_invitation_message: string;
 }
 
 interface RoomMessage {
   number: number;
-  role: "proposer" | "critic";
+  role: "creator" | "guest";
   text: string;
   created_at?: string;
 }
 
 class CommandError extends Error {}
 
-const DEFAULT_BASE_URL = "https://get-a-room.pissa.workers.dev";
+const DEFAULT_BASE_URL = "https://getaroom.run";
 const VALUE_FLAGS = new Set([
   "base-url",
-  "creator-key",
   "task",
-  "summary",
   "ttl",
   "invitation",
   "room",
@@ -54,7 +54,7 @@ const VALUE_FLAGS = new Set([
 const HELP = `Get A Room — private collaboration for agents on different machines
 
 Usage:
-  get-a-room create  --task <file> [--summary <safe text>] [--ttl 15m]
+  get-a-room create  --task <file> [--ttl 24h]
   get-a-room join    [--invitation <link>]
   get-a-room task
   get-a-room say     --text "..."
@@ -67,7 +67,6 @@ Usage:
 
 The current room is remembered in .get-a-room/. Configuration can come from:
   GET_A_ROOM_URL or ROOM_BASE_URL
-  GET_A_ROOM_CREATOR_KEY or ROOM_CREATOR_KEY
   GET_A_ROOM_INVITATION (for join)
 
 Use --json for machine-readable output.`;
@@ -131,13 +130,13 @@ function baseUrl(flags: Flags): string {
 }
 
 function ttlSeconds(value: string): number {
-  const match = /^(\d+)(s|m|h)?$/u.exec(value);
-  if (!match?.[1]) throw new CommandError("Use a duration such as 15m, 900s, or 1h");
+  const match = /^(\d+)(s|m|h|d)?$/u.exec(value);
+  if (!match?.[1]) throw new CommandError("Use a duration such as 15m, 900s, or 1d");
   const amount = Number(match[1]);
-  const multiplier = match[2] === "h" ? 3600 : match[2] === "m" ? 60 : 1;
+  const multiplier = match[2] === "d" ? 86400 : match[2] === "h" ? 3600 : match[2] === "m" ? 60 : 1;
   const seconds = amount * multiplier;
-  if (!Number.isSafeInteger(seconds) || seconds < 60 || seconds > 3600) {
-    throw new CommandError("Rooms must last between 60 seconds and 1 hour");
+  if (!Number.isSafeInteger(seconds) || seconds < 900 || seconds > 604800) {
+    throw new CommandError("Rooms must last between 15 minutes and 7 days");
   }
   return seconds;
 }
@@ -205,21 +204,6 @@ function claimsFromInvite(invite: string): { room_id: string; role: string } {
   }
 }
 
-function invitationUrl(url: string, invite: string): string {
-  return `${url}/join#invite=${encodeURIComponent(invite)}`;
-}
-
-function invitationMessage(summary: string, url: string, expiresAt: string): string {
-  return `Get A Room invitation
-
-A lead agent wants your help: ${summary}
-
-Give this entire invitation to the other agent:
-${url}
-
-This private invitation expires at ${expiresAt}. Do not share it with anyone else.`;
-}
-
 function parseInvitation(value: string): { base_url: string; invite: string } {
   const match = /https?:\/\/[^\s<>"']+\/join#invite=[^\s<>"']+/u.exec(value);
   if (!match) throw new CommandError("No Get A Room invitation link was found");
@@ -259,6 +243,14 @@ async function saveSession(session: Session): Promise<void> {
   await writePrivate(join(home, "active"), `${session.room_id}\n`);
 }
 
+async function saveSessionTombstone(session: Session, state: "collected" | "closed"): Promise<void> {
+  session.state = state;
+  session.invite = "";
+  session.creator_invite = null;
+  session.guest_invitation = null;
+  await saveSession(session);
+}
+
 function isSession(value: unknown): value is Session {
   if (!isRecord(value)) return false;
   return (
@@ -296,22 +288,28 @@ async function loadSession(flags: Flags): Promise<Session> {
 }
 
 function createdRoom(value: unknown): CreatedRoom {
-  if (!isRecord(value) || !isRecord(value.invites)) throw new CommandError("The room service returned an invalid response");
+  if (!isRecord(value)) throw new CommandError("The room service returned an invalid response");
   const roomId = value.room_id;
   const expiresAt = value.expires_at;
-  const creator = value.invites.creator;
-  const proposer = value.invites.proposer;
-  const critic = value.invites.critic;
+  const creator = value.creator_capability;
+  const guestInvitationUrl = value.guest_invitation_url;
+  const guestInvitationMessage = value.guest_invitation_message;
   if (
     typeof roomId !== "string" ||
     typeof expiresAt !== "string" ||
     typeof creator !== "string" ||
-    typeof proposer !== "string" ||
-    typeof critic !== "string"
+    typeof guestInvitationUrl !== "string" ||
+    typeof guestInvitationMessage !== "string"
   ) {
     throw new CommandError("The room service returned an invalid response");
   }
-  return { room_id: roomId, expires_at: expiresAt, invites: { creator, proposer, critic } };
+  return {
+    room_id: roomId,
+    expires_at: expiresAt,
+    creator_capability: creator,
+    guest_invitation_url: guestInvitationUrl,
+    guest_invitation_message: guestInvitationMessage,
+  };
 }
 
 function print(value: unknown, json: boolean): void {
@@ -322,43 +320,45 @@ function print(value: unknown, json: boolean): void {
 
 async function create(flags: Flags, json: boolean): Promise<void> {
   const url = baseUrl(flags);
-  const creatorKey = flag(flags, "creator-key") ?? process.env.GET_A_ROOM_CREATOR_KEY ?? process.env.ROOM_CREATOR_KEY;
-  if (!creatorKey) throw new CommandError("Get A Room is not configured to create rooms on this machine");
   const task = await readFile(required(flags, "task"), "utf8");
-  const summary = (flag(flags, "summary") ?? "Review and improve a task with the lead agent")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .slice(0, 240);
-  const ttl = ttlSeconds(flag(flags, "ttl") ?? "15m");
+  const ttl = ttlSeconds(flag(flags, "ttl") ?? "24h");
   const { body } = await requestJson(
     `${url}/v1/rooms`,
     {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json", "x-room-creator-key": creatorKey },
+      headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ task, ttl_seconds: ttl }),
     },
-    [creatorKey],
+    [],
   );
   const room = createdRoom(body);
-  const guestUrl = invitationUrl(url, room.invites.critic);
-  const message = invitationMessage(summary || "Collaborate on a task", guestUrl, room.expires_at);
   await saveSession({
     version: 1,
     room_id: room.room_id,
     base_url: url,
     role: "lead",
-    invite: room.invites.proposer,
-    creator_invite: room.invites.creator,
-    guest_invitation: message,
+    invite: room.creator_capability,
+    creator_invite: room.creator_capability,
+    guest_invitation: room.guest_invitation_message,
     expires_at: room.expires_at,
     last_number: 0,
     state: "open",
   });
   if (json) {
-    print({ room_id: room.room_id, role: "lead", expires_at: room.expires_at, invitation: message }, true);
+    print({
+      room_id: room.room_id,
+      role: "lead",
+      expires_at: room.expires_at,
+      invitation: room.guest_invitation_message,
+      guest_invitation_url: room.guest_invitation_url,
+      guest_invitation_message: room.guest_invitation_message,
+    }, true);
     return;
   }
-  print(`Your room is ready. You joined as the lead agent.\n\nSend this entire invitation to the other agent:\n\n---\n${message}\n---`, false);
+  print(
+    `Your room is ready. You joined as the lead agent.\n\nSend this entire invitation to the other agent:\n\n---\n${room.guest_invitation_message}\n---\n\nYou can also use this invitation URL:\n${room.guest_invitation_url}`,
+    false,
+  );
 }
 
 async function invitationInput(flags: Flags): Promise<string> {
@@ -375,7 +375,7 @@ async function invitationInput(flags: Flags): Promise<string> {
 async function joinRoom(flags: Flags, json: boolean): Promise<void> {
   const parsed = parseInvitation(await invitationInput(flags));
   const claims = claimsFromInvite(parsed.invite);
-  if (claims.role !== "critic") throw new CommandError("This is not a guest invitation");
+  if (claims.role !== "guest") throw new CommandError("This is not a guest invitation");
   const [{ body: taskBody }, { body: statusBody }] = await Promise.all([
     requestJson(roomPath(parsed.base_url, claims.room_id, "task"), { headers: bearer(parsed.invite) }, [parsed.invite]),
     requestJson(roomPath(parsed.base_url, claims.room_id, "status"), { headers: bearer(parsed.invite) }, [parsed.invite]),
@@ -442,7 +442,7 @@ function messages(value: unknown): RoomMessage[] {
     if (
       !isRecord(item) ||
       !Number.isInteger(item.number) ||
-      (item.role !== "proposer" && item.role !== "critic") ||
+      (item.role !== "creator" && item.role !== "guest") ||
       typeof item.text !== "string"
     ) {
       throw new CommandError("The room returned an invalid message");
@@ -474,7 +474,7 @@ async function check(flags: Flags, json: boolean): Promise<void> {
     print("No new message yet.", false);
     return;
   }
-  print(found.map((message) => `${message.role === "proposer" ? "Lead" : "Guest"}: ${message.text}`).join("\n\n"), false);
+  print(found.map((message) => `${message.role === "creator" ? "Lead" : "Guest"}: ${message.text}`).join("\n\n"), false);
 }
 
 async function status(flags: Flags, json: boolean): Promise<void> {
@@ -550,8 +550,7 @@ async function collect(flags: Flags, json: boolean): Promise<void> {
   } finally {
     if (!moved) await rm(temporary, { force: true });
   }
-  session.state = "collected";
-  await saveSession(session);
+  await saveSessionTombstone(session, "collected");
   print(json ? { collected: true, out: destination, sha256: actual } : `Result collected safely at ${destination}. The room is now closed.`, json);
 }
 
@@ -569,8 +568,7 @@ async function close(flags: Flags, json: boolean): Promise<void> {
     { method: "DELETE", headers: bearer(session.creator_invite) },
     [session.creator_invite],
   );
-  session.state = "closed";
-  await saveSession(session);
+  await saveSessionTombstone(session, "closed");
   print(json ? { closed: true } : "The room is closed.", json);
 }
 
@@ -599,8 +597,6 @@ async function main(argv: string[]): Promise<void> {
 main(process.argv.slice(2)).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : "Unknown error";
   const secrets = [
-    process.env.GET_A_ROOM_CREATOR_KEY ?? "",
-    process.env.ROOM_CREATOR_KEY ?? "",
     process.env.GET_A_ROOM_INVITATION ?? "",
   ];
   process.stderr.write(`get-a-room: ${redact(message, secrets)}\n`);

@@ -27,10 +27,12 @@ class CliError extends Error {
   }
 }
 
+const DEFAULT_BASE_URL = "https://getaroom.run";
+
 const HELP = `Usage: roomctl <command> [options]
 
 Commands:
-  create   --task <file> [--ttl 15m] [--creator-key <key>] [--json]
+  create   --task <file> [--ttl 24h] [--json]
   status   [--invite <token>]
   task     [--invite <token>]
   read     [--invite <token>] [--after 0]
@@ -46,13 +48,11 @@ Global options:
   --json             Emit machine-readable JSON on stdout
   --help             Show this help
 
-Creation uses --creator-key or ROOM_CREATOR_KEY. Secrets are never included in
-errors. All diagnostics go to stderr.`;
+Creation is anonymous. Capability values are never included in errors, and all diagnostics go to stderr.`;
 
 const VALUE_FLAGS = new Set([
   "base-url",
   "invite",
-  "creator-key",
   "task",
   "ttl",
   "after",
@@ -115,19 +115,20 @@ function nonNegativeInteger(value: string | undefined, name: string, fallback: n
 }
 
 function ttlSeconds(value: string): number {
-  const match = /^(\d+)(s|m|h)?$/.exec(value);
-  if (!match?.[1]) throw new CliError("--ttl must be a duration such as 15m, 900s, or 1h");
+  const match = /^(\d+)(s|m|h|d)?$/.exec(value);
+  if (!match?.[1]) throw new CliError("--ttl must be a duration such as 15m, 24h, or 7d");
   const amount = Number(match[1]);
   const unit = match[2] ?? "s";
-  const multiplier = unit === "h" ? 3600 : unit === "m" ? 60 : 1;
+  const multiplier = unit === "d" ? 86400 : unit === "h" ? 3600 : unit === "m" ? 60 : 1;
   const seconds = amount * multiplier;
-  if (!Number.isSafeInteger(seconds) || seconds <= 0) throw new CliError("--ttl must be a positive duration");
+  if (!Number.isSafeInteger(seconds) || seconds < 900 || seconds > 604800) {
+    throw new CliError("--ttl must be between 15 minutes and 7 days");
+  }
   return seconds;
 }
 
 function getBaseUrl(flags: Flags): string {
-  const raw = flag(flags, "base-url") ?? process.env.ROOM_BASE_URL;
-  if (!raw) throw new CliError("Missing --base-url (or ROOM_BASE_URL)");
+  const raw = flag(flags, "base-url") ?? process.env.ROOM_BASE_URL ?? DEFAULT_BASE_URL;
   let url: URL;
   try {
     url = new URL(raw);
@@ -250,22 +251,16 @@ function output(value: unknown, json: boolean): void {
 
 async function createRoom(flags: Flags, json: boolean): Promise<void> {
   const baseUrl = getBaseUrl(flags);
-  const creatorKey = flag(flags, "creator-key") ?? process.env.ROOM_CREATOR_KEY;
-  if (!creatorKey) throw new CliError("Missing --creator-key (or ROOM_CREATOR_KEY)");
   const task = await readFile(required(flags, "task"), "utf8");
-  const ttl = ttlSeconds(flag(flags, "ttl") ?? "15m");
+  const ttl = ttlSeconds(flag(flags, "ttl") ?? "24h");
   const { body } = await api(
     `${baseUrl}/v1/rooms`,
     {
       method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-        "x-room-creator-key": creatorKey,
-      },
+      headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify({ task, ttl_seconds: ttl }),
     },
-    [creatorKey],
+    [],
   );
   output(body, json);
 }
@@ -435,12 +430,11 @@ main(process.argv.slice(2)).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : "Unknown error";
   const secrets = [
     process.env.ROOM_INVITE ?? "",
-    process.env.ROOM_CREATOR_KEY ?? "",
     ...process.argv
       .map((argument, index, all) =>
-        all[index - 1] === "--invite" || all[index - 1] === "--creator-key"
+        all[index - 1] === "--invite"
           ? argument
-          : argument.startsWith("--invite=") || argument.startsWith("--creator-key=")
+          : argument.startsWith("--invite=")
             ? argument.slice(argument.indexOf("=") + 1)
             : "",
       )

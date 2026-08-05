@@ -68,7 +68,7 @@ async function mockServer(
 async function runCli(args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync(process.execPath, ["--import", "tsx", "cli/roomctl.ts", ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, ROOM_INVITE: undefined, ROOM_CREATOR_KEY: undefined, ROOM_BASE_URL: undefined, ...env },
+    env: { ...process.env, ROOM_INVITE: undefined, ROOM_BASE_URL: undefined, ...env },
     timeout: 10_000,
   });
 }
@@ -79,7 +79,7 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 
 describe("roomctl", () => {
-  it("creates a room using the canonical creator header and TTL in seconds", async () => {
+  it("creates a room and passes task+TTL in seconds", async () => {
     const directory = await temporaryDirectory();
     const taskPath = join(directory, "task.md");
     await writeFile(taskPath, "# Test task\n", "utf8");
@@ -89,7 +89,9 @@ describe("roomctl", () => {
       json(response, 201, {
         room_id: ROOM_ID,
         expires_at: "2030-01-01T00:00:00.000Z",
-        invites: { creator: "one", proposer: "two", critic: "three" },
+        creator_capability: "one",
+        guest_invitation_url: "https://example.com/join#invite=three",
+        guest_invitation_message: "https://example.com/join#invite=three",
       });
     });
 
@@ -98,8 +100,6 @@ describe("roomctl", () => {
         "create",
         "--base-url",
         server.baseUrl,
-        "--creator-key",
-        "creator-secret",
         "--task",
         taskPath,
         "--ttl",
@@ -113,7 +113,9 @@ describe("roomctl", () => {
         path: "/v1/rooms",
         body: { task: "# Test task\n", ttl_seconds: 900 },
       });
-      expect(captured?.headers["x-room-creator-key"]).toBe("creator-secret");
+      expect(captured?.headers["content-type"]).toBe("application/json");
+      expect(captured?.headers.authorization).toBeUndefined();
+      expect(captured?.headers["x-room-creator-key"]).toBeUndefined();
     } finally {
       await server.close();
     }

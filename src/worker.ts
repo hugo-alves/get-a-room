@@ -1,10 +1,12 @@
-import { bearerToken, constantTimeEqualText, createInvite, inspectInvite } from "./auth";
+import { bearerToken, createInvite, inspectInvite } from "./auth";
 import { Room } from "./room";
 import {
+  CREATION_RATE_LIMIT_WINDOW_SECONDS,
   DEFAULT_TTL_SECONDS,
   HttpError,
   MAX_TASK_BYTES,
   MAX_TTL_SECONDS,
+  MIN_TTL_SECONDS,
   errorResponse,
   json,
   readJson,
@@ -27,6 +29,10 @@ export default {
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  if (url.hostname === "www.getaroom.run") {
+    url.hostname = "getaroom.run";
+    return Response.redirect(url.toString(), 308);
+  }
   if (request.method === "GET" && url.pathname === "/join") return joinPage();
   if (request.method === "POST" && url.pathname === "/v1/rooms") return createRoom(request, env);
 
@@ -96,22 +102,28 @@ function joinPage(): Response {
 }
 
 async function createRoom(request: Request, env: Env): Promise<Response> {
-  const suppliedKey =
-    request.headers.get("x-room-creator-key") ?? request.headers.get("x-creator-key") ?? optionalBearer(request);
-  if (!suppliedKey || !(await constantTimeEqualText(suppliedKey, env.ROOM_CREATOR_KEY))) {
-    throw new HttpError(401, "invalid_creator_key", "Invalid creator key");
-  }
+  rejectOversizedCreationBody(request);
   const body = await readJson(request);
+  assertCreationFields(body);
   const task = requiredString(body.task, "task", MAX_TASK_BYTES, { allowEmpty: true });
   const ttlSecondsValue = body.ttl_seconds ?? body.ttl ?? DEFAULT_TTL_SECONDS;
-  if (!Number.isInteger(ttlSecondsValue) || (ttlSecondsValue as number) < 60 || (ttlSecondsValue as number) > MAX_TTL_SECONDS) {
-    throw new HttpError(400, "invalid_ttl", `ttl_seconds must be between 60 and ${MAX_TTL_SECONDS}`);
+  if (!Number.isInteger(ttlSecondsValue) || (ttlSecondsValue as number) < MIN_TTL_SECONDS || (ttlSecondsValue as number) > MAX_TTL_SECONDS) {
+    throw new HttpError(400, "invalid_ttl", `ttl_seconds must be between ${MIN_TTL_SECONDS} and ${MAX_TTL_SECONDS}`);
   }
+  await enforceCreationLimit(request, env);
 
   const roomId = randomRoomId();
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiresAtSeconds = issuedAt + (ttlSecondsValue as number);
   const expiresAtMs = expiresAtSeconds * 1000;
+  const expiresAt = new Date(expiresAtMs).toISOString();
+  const baseUrl = publicBaseUrl(request, env);
+  const [creator, guest] = await Promise.all([
+    createInvite(env.ROOM_SIGNING_SECRET, roomId, "creator", issuedAt, expiresAtSeconds),
+    createInvite(env.ROOM_SIGNING_SECRET, roomId, "guest", issuedAt, expiresAtSeconds),
+  ]);
+  const guestInviteUrl = `${baseUrl}/join#invite=${encodeURIComponent(guest)}`;
+
   const stub = env.ROOMS.get(env.ROOMS.idFromName(roomId));
   const initialization = await stub.fetch("https://room.internal/_initialize", {
     method: "POST",
@@ -120,24 +132,69 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
   });
   if (!initialization.ok) throw new HttpError(500, "room_initialization_failed", "Could not initialize room");
 
-  const [creator, proposer, critic] = await Promise.all([
-    createInvite(env.ROOM_SIGNING_SECRET, roomId, "creator", issuedAt, expiresAtSeconds),
-    createInvite(env.ROOM_SIGNING_SECRET, roomId, "proposer", issuedAt, expiresAtSeconds),
-    createInvite(env.ROOM_SIGNING_SECRET, roomId, "critic", issuedAt, expiresAtSeconds),
-  ]);
   return json(
     {
       room_id: roomId,
-      expires_at: new Date(expiresAtMs).toISOString(),
-      invites: { creator, proposer, critic },
+      expires_at: expiresAt,
+      creator_capability: creator,
+      guest_invitation_url: guestInviteUrl,
+      guest_invitation_message: invitationMessage(guestInviteUrl, expiresAt),
     },
     201,
   );
 }
 
-function optionalBearer(request: Request): string | null {
-  const authorization = request.headers.get("authorization") ?? "";
-  return /^Bearer ([^\s]+)$/u.exec(authorization)?.[1] ?? null;
+async function enforceCreationLimit(request: Request, env: Env): Promise<void> {
+  const key = await creationKey(request);
+  const result = await env.ROOM_CREATION_RATE_LIMITER.limit({ key });
+  if (!result.success) {
+    throw new HttpError(429, "creation_rate_limited", "Too many room creation attempts; try again later", {
+      "retry-after": String(CREATION_RATE_LIMIT_WINDOW_SECONDS),
+    });
+  }
+}
+
+async function creationKey(request: Request): Promise<string> {
+  const caller = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const bytes = new TextEncoder().encode(caller);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function rejectOversizedCreationBody(request: Request): void {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null && /^\d+$/u.test(contentLength) && Number(contentLength) > MAX_TASK_BYTES + 4096) {
+    throw new HttpError(413, "content_too_large", "Creation request exceeds the size limit");
+  }
+}
+
+function assertCreationFields(body: Record<string, unknown>): void {
+  const allowed = new Set(["task", "ttl", "ttl_seconds"]);
+  const unexpected = Object.keys(body).find((key) => !allowed.has(key));
+  if (unexpected) throw new HttpError(400, "invalid_request", `Unexpected creation field: ${unexpected}`);
+}
+
+function publicBaseUrl(request: Request, env: Env): string {
+  if (!env.PUBLIC_BASE_URL) return new URL(request.url).origin;
+  let parsed: URL;
+  try {
+    parsed = new URL(env.PUBLIC_BASE_URL);
+  } catch {
+    throw new Error("PUBLIC_BASE_URL must be an absolute URL");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("PUBLIC_BASE_URL must use HTTP or HTTPS");
+  return parsed.toString().replace(/\/$/u, "");
+}
+
+function invitationMessage(guestInviteUrl: string, expiresAt: string): string {
+  return [
+    "Get A Room invitation",
+    "",
+    "Give this complete invitation to the guest agent:",
+    guestInviteUrl,
+    "",
+    `This private invitation expires at ${expiresAt}. Treat it like a password.`,
+  ].join("\n");
 }
 
 function randomRoomId(): string {

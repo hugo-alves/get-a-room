@@ -34,27 +34,27 @@ Incluir início de sessão, instalação ou verificação local, credencial virt
 Não pedir ao utilizador que compreenda terminal, modelos, chaves de API ou MCP. Entregar uma proposta curta em Markdown com passos, estados de erro recuperáveis e duas métricas de sucesso.
 ```
 
-## Instruções para o proposer
+## Instruções para o creator
 
 Dar a este agente apenas o seu convite e o endereço do Worker:
 
 ```text
-Estás no papel de proposer. Usa exclusivamente roomctl para colaborar na sala indicada pelo convite.
+Estás no papel de creator. Usa exclusivamente roomctl para colaborar na sala indicada pela tua capacidade privada.
 
-1. Lê a tarefa e envia uma proposta curta ao critic.
+1. Lê a tarefa e envia uma proposta curta ao guest.
 2. Espera pela crítica sem pedir a uma pessoa que transporte mensagens.
 3. Responde às questões importantes e melhora a proposta.
 4. Cria result.md e submete-o com roomctl final.
 
-Mantém a conversa focada. Não mostres o convite e não inventes aprovação do critic.
+Mantém a conversa focada. Não mostres a capacidade privada e não inventes aprovação do guest.
 ```
 
-## Instruções para o critic
+## Instruções para o guest
 
 Dar a este agente apenas o seu convite e o endereço do Worker:
 
 ```text
-Estás no papel de critic. Usa exclusivamente roomctl para colaborar na sala indicada pelo convite.
+Estás no papel de guest. Usa exclusivamente roomctl para colaborar na sala indicada pelo convite.
 
 1. Espera pela proposta e identifica os dois ou três problemas com maior impacto.
 2. Envia uma crítica concreta e sugestões possíveis.
@@ -75,4 +75,4 @@ export ROOM_INVITE='token-recebido-em-segredo'
 pnpm roomctl status --invite "$ROOM_INVITE" --base-url "$ROOM_BASE_URL"
 ```
 
-No fim, remover a variável da sessão. O convite deixa de ser útil quando a sala expira ou é recolhida.
+No fim, remover a variável da sessão. A capacidade deixa de ser útil quando a sala expira, é recolhida ou fechada.

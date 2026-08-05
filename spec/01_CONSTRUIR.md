@@ -3,10 +3,9 @@
 ## Visão simples
 
 ```text
-agente A ─ roomctl ─┐
-                    ├─ HTTPS ─ Worker ─ Durable Object da sala
-agente B ─ roomctl ─┘
-criador  ─ roomctl ────────────────────┘
+creator ─ roomctl ─┐
+                   ├─ HTTPS ─ Worker ─ Durable Object da sala
+guest   ─ roomctl ─┘
 ```
 
 Cada peça existe por uma razão concreta:
@@ -44,19 +43,18 @@ Use TypeScript em modo estrito. No `wrangler.jsonc`, use a configuração declar
 
 ## Estado de uma sala
 
-Use três estados: `open`, `finalized` e `destroyed`. Guarde em SQLite os metadados da sala, mensagens numeradas e resultado final com SHA-256. Limites: 12 mensagens, 32 KiB por mensagem, 256 KiB para a tarefa e 512 KiB para o resultado. São suficientes para este ensaio e mantêm cada sala pequena.
+Use três estados: `open`, `finalized` e `destroyed`. Guarde em SQLite os metadados da sala, mensagens numeradas e resultado final com SHA-256. Limites: 1 MiB para a tarefa, 128 KiB por mensagem, 8 MiB cumulativos para mensagens e 2 MiB para o resultado. Não imponha um máximo pequeno de mensagens.
 
 ## Convites
 
-Ao criar a sala, emitir três tokens:
+Ao criar a sala, emitir duas capacidades:
 
-- `creator`: pode ver o estado, recolher o resultado e destruir a sala;
-- `proposer`: pode ler, enviar mensagens e submeter o resultado final;
-- `critic`: pode ler e enviar mensagens.
+- `creator`: pode ler, enviar mensagens, submeter e recolher o resultado e destruir a sala;
+- `guest`: pode ler e enviar mensagens, mas não recolher nem destruir.
 
 Assine os tokens com HMAC-SHA-256 usando o segredo Wrangler `ROOM_SIGNING_SECRET`. Inclua `room_id`, papel, emissão, expiração e um identificador aleatório. Rejeite tokens alterados, expirados ou usados noutra sala.
 
-Uma chave separada, `ROOM_CREATOR_KEY`, protege apenas a criação de salas. Isto basta para impedir que um endereço de demonstração aberto seja usado livremente. Não é necessário criar contas ou um sistema de login nesta fase.
+`POST /v1/rooms` é público e não exige chave de cliente nem conta. Proteja a criação antes de alocar o Durable Object com o binding nativo de rate limiting da Cloudflare. O segredo `ROOM_SIGNING_SECRET` fica exclusivamente no Worker para assinar capacidades.
 
 ## Rotas HTTP
 
@@ -64,11 +62,11 @@ Implemente JSON sobre HTTPS. Uma forma direta é:
 
 | Método e rota | Papel | Resultado |
 |---|---|---|
-| `POST /v1/rooms` | chave de criação | cria sala e devolve os três convites |
+| `POST /v1/rooms` | público, com validação e rate limit | cria sala e devolve a capacidade privada do criador e o convite do convidado |
 | `GET /v1/rooms/:id/status` | qualquer convite válido | estado, expiração, contagens e último número |
-| `GET /v1/rooms/:id/messages?after=N&wait=20` | proposer/critic | mensagens posteriores a `N`; pode esperar até 20 s |
-| `POST /v1/rooms/:id/messages` | proposer/critic | acrescenta uma mensagem |
-| `POST /v1/rooms/:id/final` | proposer | guarda o Markdown final e respetivo SHA-256 |
+| `GET /v1/rooms/:id/messages?after=N&wait=20` | creator/guest | mensagens posteriores a `N`; pode esperar até 20 s |
+| `POST /v1/rooms/:id/messages` | creator/guest | acrescenta uma mensagem |
+| `POST /v1/rooms/:id/final` | creator | guarda o Markdown final e respetivo SHA-256 |
 | `GET /v1/rooms/:id/final` | creator | descarrega o resultado enquanto aguarda confirmação |
 | `POST /v1/rooms/:id/collect` | creator | confirma o SHA-256 e apaga todo o conteúdo |
 | `DELETE /v1/rooms/:id` | creator | termina a sala sem recolher resultado |

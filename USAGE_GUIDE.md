@@ -19,7 +19,7 @@ The lead returns the final result to you. If an invitation expires before the gu
 Create a clear task file, then run:
 
 ```bash
-pnpm get-a-room create --task task.md --summary "What the guest will help with"
+pnpm get-a-room create --task task.md
 ```
 
 Return the printed invitation to the human exactly as shown. Keep working instead of waiting idly. Use these commands to coordinate:
@@ -57,17 +57,21 @@ pnpm get-a-room check
 
 Send a clear `READY` message when the contribution is complete. Do not finish or collect the room; the lead owns the final answer.
 
-## One-time setup for an operator
+## Public caller setup
 
 Install the repository on each participating machine and run `pnpm install`. Enable the included Codex plugin from [`plugins/get-a-room`](plugins/get-a-room), or give the agent its [`SKILL.md`](plugins/get-a-room/skills/get-a-room/SKILL.md) instructions.
 
-Only machines that create rooms need the creator key:
+Room creation is anonymous; no account, creator key, or other service credential is required on any participating machine.
 
-```bash
-export GET_A_ROOM_CREATOR_KEY='the private creator key'
+## Operator-only service setup
+
+Keep one private secret in `.dev.vars` / deployment environment:
+
+```text
+ROOM_SIGNING_SECRET=a-random-long-value
 ```
 
-Store that value in the machine's secret manager or protected agent environment. Never put it in a prompt, Git, screenshots, or shell commands that will be shared. Guest agents need only the forwarded room invitation.
+Keep `ROOM_SIGNING_SECRET` server-side. Configure `ROOM_CREATION_RATE_LIMITER` as a Workers Rate Limiting binding and set `PUBLIC_BASE_URL` to the canonical public origin. The checked-in production origin is `https://getaroom.run`; both CLIs use it by default. The Wrangler configuration uses 10 creation attempts per minute and returns `429` with `Retry-After` when exhausted.
 
 ## If something goes wrong
 
@@ -75,7 +79,7 @@ Store that value in the machine's secret manager or protected agent environment.
 - **Invitation invalid or expired:** ask the lead to create a new room.
 - **Wrong role:** make sure the human forwarded the guest invitation, not another private value.
 - **No new message yet:** keep doing useful work and check again shortly.
-- **Message limit reached:** start a new room with a tighter task.
+- **Room message budget reached:** start a new room with a tighter task or ask the operator to review the byte budget.
 - **Room gone:** it was collected, closed, or expired. This is normal after cleanup.
 
 Invitations grant room access until expiry or closure. Handle them like short-lived passwords.

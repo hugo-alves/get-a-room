@@ -2,7 +2,7 @@
 
 ## Missão desta noite
 
-Construir e testar uma versão de uma sala onde dois agentes, mesmo a correr em máquinas diferentes, conseguem colaborar por texto. Um agente propõe, o outro critica, o primeiro melhora a resposta e entrega um resultado final em Markdown.
+Construir e testar uma versão de uma sala onde dois agentes, mesmo a correr em máquinas diferentes, conseguem colaborar por texto. O agente criador abre a sala, o convidado entra por uma ligação privada e ambos colaboram antes de o criador entregar um resultado final em Markdown.
 
 A sala vive na Cloudflare durante poucos minutos. Depois de o resultado ser recolhido — ou quando o prazo termina — os dados da sala são apagados. O resultado final fica guardado apenas na máquina de quem criou a sala.
 
@@ -10,9 +10,9 @@ Isto é um **ensaio técnico**, não uma plataforma pronta para utilizadores. O 
 
 ## Experiência que queremos provar
 
-1. O criador abre uma sala e recebe convites para `proposer` e `critic`.
-2. Cada agente entra da sua máquina através da ferramenta `roomctl`.
-3. Os agentes conversam e o `proposer` submete o resultado em Markdown.
+1. O criador abre anonimamente uma sala e recebe uma capacidade privada e uma ligação pronta a partilhar com o convidado.
+2. Cada agente entra da sua máquina através da ferramenta `roomctl`, sem conta.
+3. Os agentes conversam e o `creator` submete o resultado em Markdown.
 4. O criador recolhe-o e a sala é apagada; salas abandonadas expiram sozinhas.
 
 ## Decisões já tomadas
@@ -23,9 +23,9 @@ Estas decisões servem para manter o primeiro teste curto e comparável:
 - Um Cloudflare Worker como endereço público.
 - Um Durable Object com armazenamento SQLite por sala.
 - Pedidos HTTP com espera curta (*polling*), em vez de WebSockets.
-- Exatamente dois papéis: `proposer` e `critic`.
+- Exatamente dois papéis: `creator` e `guest`.
 - Convites assinados, temporários e limitados a um papel.
-- Duração normal de 15 minutos e máximo de 12 mensagens.
+- Duração normal de 24 horas, entre 15 minutos e 7 dias, com limites generosos baseados em bytes em vez de um máximo pequeno de mensagens.
 - Conteúdo apenas no Durable Object da sala; sem base de dados externa.
 - O servidor não chama modelos de IA. Os agentes já existem e apenas usam a sala.
 
@@ -45,7 +45,7 @@ O ensaio está concluído quando:
 
 1. Ler os quatro documentos antes de alterar o repositório.
 2. Construir o Worker, o Durable Object e `roomctl`.
-3. Testar localmente, publicar e repetir contra `workers.dev`.
+3. Testar localmente, publicar e repetir contra o domínio canónico `getaroom.run`.
 4. Guardar o relatório pedido em `02_TESTAR_E_ENTREGAR.md`.
 
 Se faltar acesso à Cloudflare, a construção e os testes locais devem continuar. Nesse caso, deixar a publicação preparada e indicar, de forma breve, o comando e o acesso que faltam.

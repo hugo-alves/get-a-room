@@ -21,11 +21,11 @@ O `README.md` deve indicar os comandos reais e como instalar ou executar `roomct
 
 Cobrir os casos que demonstram o objetivo:
 
-1. criar uma sala devolve convites diferentes e uma expiração;
-2. proposer e critic conseguem enviar e ler mensagens pela ordem correta;
-3. critic não consegue submeter o resultado final;
+1. criar anonimamente uma sala devolve uma capacidade privada do criador, um convite do convidado e uma expiração;
+2. creator e guest conseguem enviar e ler mensagens pela ordem correta;
+3. guest não consegue submeter o resultado final, recolher ou fechar a sala;
 4. um token alterado, expirado ou de outra sala é rejeitado;
-5. o limite de mensagens e os limites de tamanho são respeitados;
+5. os limites por mensagem e o orçamento cumulativo em bytes são respeitados sem um teto pequeno de mensagens;
 6. `collect` valida o SHA-256 antes de confirmar;
 7. `collect`, `destroy` e o alarme limpam os dados e deixam a sala em `410`.
 
@@ -33,29 +33,28 @@ Use o ambiente Vitest da Cloudflare para testar o Durable Object real, incluindo
 
 ## Demonstração local
 
-Abra o servidor local e use três terminais: criador, proposer e critic. A tarefa e os textos de exemplo estão em `03_ACESSOS_E_EXEMPLO.md`.
+Abra o servidor local e use dois terminais: creator e guest. A tarefa e os textos de exemplo estão em `03_ACESSOS_E_EXEMPLO.md`.
 
 O percurso esperado é:
 
-1. criar a sala e entregar o convite adequado a cada participante;
+1. criar a sala sem credencial de cliente e encaminhar a mensagem de convite do guest;
 2. enviar pelo menos duas mensagens de cada agente;
-3. submeter `result.md` pelo proposer;
+3. submeter `result.md` pelo creator;
 4. recolher o resultado e confirmar o SHA-256;
 5. tentar ler novamente e observar `410`.
 
-Não colocar tokens reais no histórico Git, em capturas de ecrã ou no relatório. Para demonstrar os papéis, basta indicar que foram usados três tokens distintos.
+Não colocar capacidades reais no histórico Git, em capturas de ecrã ou no relatório. Para demonstrar os papéis, basta indicar que foram usadas duas capacidades distintas.
 
 ## Publicação e demonstração remota
 
-Configure os dois segredos:
+Configure o segredo interno do operador:
 
 ```bash
 pnpm wrangler secret put ROOM_SIGNING_SECRET
-pnpm wrangler secret put ROOM_CREATOR_KEY
 pnpm deploy
 ```
 
-Use valores aleatórios longos e diferentes. O endereço `workers.dev` é suficiente; não é necessário configurar domínio próprio. Repita o mesmo percurso local com `--base-url` apontado para o endereço publicado e, se possível, com os dois participantes em máquinas ou sessões diferentes.
+Use um valor aleatório longo. Configure também o binding `ROOM_CREATION_RATE_LIMITER` e o `PUBLIC_BASE_URL` canónico no `wrangler.jsonc`. Em produção, use o domínio próprio `getaroom.run`; mantenha `workers.dev` apenas durante a validação de migração e desative-o depois de provar o novo domínio. Repita o mesmo percurso local com `--base-url` apontado para o endereço publicado e, se possível, com os dois participantes em máquinas ou sessões diferentes.
 
 Durable Objects com SQLite estão disponíveis no Workers Free. Confirme os preços ligados em `01_CONSTRUIR.md` antes de aumentar o uso.
 

@@ -3,16 +3,24 @@ import { runDurableObjectAlarm, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 import { createInvite } from "../src/auth";
-import { MAX_FINAL_BYTES, MAX_MESSAGE_BYTES, MAX_MESSAGES, MAX_TASK_BYTES, type Env } from "../src/shared";
+import {
+  CREATION_RATE_LIMIT_MAX,
+  MAX_FINAL_BYTES,
+  MAX_MESSAGE_BYTES,
+  MAX_TASK_BYTES,
+  MAX_TOTAL_MESSAGE_BYTES,
+  type Env,
+} from "../src/shared";
 
 const ORIGIN = "https://room.test";
-const CREATOR_KEY = "test-creator-key-at-least-32-bytes-long";
 const SIGNING_SECRET = "test-signing-secret-at-least-32-bytes-long";
 
 interface CreatedRoom {
   room_id: string;
   expires_at: string;
-  invites: { creator: string; proposer: string; critic: string };
+  creator_capability: string;
+  guest_invitation_url: string;
+  guest_invitation_message: string;
 }
 
 interface MessageList {
@@ -20,19 +28,24 @@ interface MessageList {
 }
 
 const bindings = env as unknown as Env;
+let callerSequence = 1;
 
 async function workerFetch(path: string, init?: RequestInit): Promise<Response> {
   return SELF.fetch(new Request(`${ORIGIN}${path}`, init));
 }
 
-async function createRoom(task = "# Task", ttlSeconds = 900): Promise<CreatedRoom> {
-  const response = await workerFetch("/v1/rooms", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-room-creator-key": CREATOR_KEY },
-    body: JSON.stringify({ task, ttl_seconds: ttlSeconds }),
-  });
+async function createRoom(task = "# Task", ttlSeconds = 24 * 60 * 60, callerIp?: string): Promise<CreatedRoom> {
+  const response = await createRoomResponse(task, ttlSeconds, callerIp ?? `203.0.113.${callerSequence++}`);
   expect(response.status).toBe(201);
   return response.json<CreatedRoom>();
+}
+
+function createRoomResponse(task: string, ttlSeconds: number, callerIp: string): Promise<Response> {
+  return workerFetch("/v1/rooms", {
+    method: "POST",
+    headers: { "content-type": "application/json", "cf-connecting-ip": callerIp },
+    body: JSON.stringify({ task, ttl_seconds: ttlSeconds }),
+  });
 }
 
 function authenticated(invite: string, method = "GET", body?: unknown): RequestInit {
@@ -55,138 +68,169 @@ describe("temporary agent room", () => {
     await expect(response.text()).resolves.toContain("Get A Room");
   });
 
-  it("creates a room with three distinct, expiring capabilities", async () => {
-    const room = await createRoom("A harmless task", 600);
+  it("permanently redirects www to the canonical apex domain", async () => {
+    const response = await SELF.fetch(new Request("https://www.getaroom.run/join?source=test"), { redirect: "manual" });
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe("https://getaroom.run/join?source=test");
+  });
+
+  it("creates anonymously and returns creator plus canonical guest invitation", async () => {
+    const room = await createRoom("A harmless task");
 
     expect(room.room_id).toMatch(/^[0-9a-f]{32}$/);
-    expect(new Set(Object.values(room.invites))).toHaveLength(3);
-    expect(Date.parse(room.expires_at)).toBeGreaterThan(Date.now());
+    expect(room.creator_capability).not.toBe("");
+    expect(room.guest_invitation_url).toMatch(/^https:\/\/getaroom\.run\/join#invite=/);
+    expect(room.guest_invitation_message).toContain(room.guest_invitation_url);
+    expect(Date.parse(room.expires_at)).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
 
-    const task = await workerFetch(`/v1/rooms/${room.room_id}/task`, authenticated(room.invites.proposer));
+    const task = await workerFetch(`/v1/rooms/${room.room_id}/task`, authenticated(room.creator_capability));
     expect(task.status).toBe(200);
     await expect(task.json()).resolves.toEqual({ task: "A harmless task" });
   });
 
-  it("orders messages from proposer and critic and supports after cursors", async () => {
-    const room = await createRoom();
-    const entries = [
-      [room.invites.proposer, "proposal one"],
-      [room.invites.critic, "critique one"],
-      [room.invites.proposer, "proposal two"],
-      [room.invites.critic, "READY"],
-    ] as const;
+  it("validates anonymous creation before allocating a room", async () => {
+    const oversized = await createRoomResponse("x".repeat(MAX_TASK_BYTES + 1), 24 * 60 * 60, "198.51.100.10");
+    expect(oversized.status).toBe(413);
+    await expect(oversized.json()).resolves.toMatchObject({ error: "content_too_large" });
 
-    for (const [invite, text] of entries) {
+    const unexpected = await workerFetch("/v1/rooms", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "198.51.100.11" },
+      body: JSON.stringify({ task: "ok", ttl_seconds: 3600, creator_key: "legacy" }),
+    });
+    expect(unexpected.status).toBe(400);
+    await expect(unexpected.json()).resolves.toMatchObject({ error: "invalid_request" });
+
+    const short = await createRoomResponse("ok", 60, "198.51.100.12");
+    expect(short.status).toBe(400);
+    await expect(short.json()).resolves.toMatchObject({ error: "invalid_ttl" });
+  });
+
+  it("rate limits anonymous creation with Retry-After", async () => {
+    const caller = "198.51.100.20";
+    for (let index = 0; index < CREATION_RATE_LIMIT_MAX; index += 1) {
+      expect((await createRoomResponse(`task ${index}`, 24 * 60 * 60, caller)).status).toBe(201);
+    }
+    const limited = await createRoomResponse("one too many", 24 * 60 * 60, caller);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+    await expect(limited.json()).resolves.toMatchObject({ error: "creation_rate_limited" });
+  });
+
+  it("orders creator and guest messages without a low count cap", async () => {
+    const room = await createRoom();
+    const guest = new URLSearchParams(new URL(room.guest_invitation_url).hash.slice(1)).get("invite")!;
+
+    for (let index = 0; index < 20; index += 1) {
+      const invite = index % 2 === 0 ? room.creator_capability : guest;
       const response = await workerFetch(
         `/v1/rooms/${room.room_id}/messages`,
-        authenticated(invite, "POST", { text }),
+        authenticated(invite, "POST", { text: `message ${index + 1}` }),
       );
       expect(response.status).toBe(201);
     }
 
-    const response = await workerFetch(
-      `/v1/rooms/${room.room_id}/messages?after=1`,
-      authenticated(room.invites.critic),
-    );
+    const response = await workerFetch(`/v1/rooms/${room.room_id}/messages?after=17`, authenticated(guest));
     const body = await response.json<MessageList>();
-    expect(body.messages.map(({ number, role, text }) => ({ number, role, text }))).toEqual([
-      { number: 2, role: "critic", text: "critique one" },
-      { number: 3, role: "proposer", text: "proposal two" },
-      { number: 4, role: "critic", text: "READY" },
+    expect(body.messages.map(({ number, role }) => ({ number, role }))).toEqual([
+      { number: 18, role: "guest" },
+      { number: 19, role: "creator" },
+      { number: 20, role: "guest" },
     ]);
   });
 
-  it("prevents the critic from submitting a final result", async () => {
+  it("enforces per-message, cumulative UTF-8, and final-result byte limits", async () => {
     const room = await createRoom();
-    const response = await workerFetch(
-      `/v1/rooms/${room.room_id}/final`,
-      authenticated(room.invites.critic, "POST", { markdown: "# Not allowed" }),
+    const oversizedMessage = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(room.creator_capability, "POST", { text: "x".repeat(MAX_MESSAGE_BYTES + 1) }),
     );
-    expect(response.status).toBe(403);
+    expect(oversizedMessage.status).toBe(413);
+
+    const chunk = "x".repeat(MAX_MESSAGE_BYTES);
+    const chunkCount = MAX_TOTAL_MESSAGE_BYTES / MAX_MESSAGE_BYTES;
+    for (let index = 0; index < chunkCount; index += 1) {
+      const response = await workerFetch(
+        `/v1/rooms/${room.room_id}/messages`,
+        authenticated(room.creator_capability, "POST", { text: chunk }),
+      );
+      expect(response.status).toBe(201);
+    }
+    const overBudget = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(room.creator_capability, "POST", { text: "é" }),
+    );
+    expect(overBudget.status).toBe(413);
+    await expect(overBudget.json()).resolves.toMatchObject({ error: "room_message_budget_exceeded" });
+
+    const finalRoom = await createRoom();
+    const oversizedFinal = await workerFetch(
+      `/v1/rooms/${finalRoom.room_id}/final`,
+      authenticated(finalRoom.creator_capability, "POST", { markdown: "x".repeat(MAX_FINAL_BYTES + 1) }),
+    );
+    expect(oversizedFinal.status).toBe(413);
   });
 
-  it("rejects tampered, expired, and cross-room invitations", async () => {
+  it("enforces guest role boundaries", async () => {
+    const room = await createRoom();
+    const guest = new URLSearchParams(new URL(room.guest_invitation_url).hash.slice(1)).get("invite")!;
+
+    const final = await workerFetch(
+      `/v1/rooms/${room.room_id}/final`,
+      authenticated(guest, "POST", { markdown: "# Not allowed" }),
+    );
+    expect(final.status).toBe(403);
+    const close = await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(guest, "DELETE"));
+    expect(close.status).toBe(403);
+  });
+
+  it("rejects tampered, expired, and cross-room capabilities", async () => {
     const first = await createRoom();
     const second = await createRoom();
-    const tampered = `${first.invites.proposer.slice(0, -1)}${first.invites.proposer.endsWith("a") ? "b" : "a"}`;
+    const [payload, signature] = first.creator_capability.split(".") as [string, string];
+    const tampered = `${payload}.${signature.startsWith("A") ? "B" : "A"}${signature.slice(1)}`;
 
     expect((await workerFetch(`/v1/rooms/${first.room_id}/status`, authenticated(tampered))).status).toBe(401);
-    expect((await workerFetch(`/v1/rooms/${second.room_id}/status`, authenticated(first.invites.creator))).status).toBe(401);
+    expect((await workerFetch(`/v1/rooms/${second.room_id}/status`, authenticated(first.creator_capability))).status).toBe(401);
 
     const now = Math.floor(Date.now() / 1000);
-    const expired = await createInvite(SIGNING_SECRET, first.room_id, "proposer", now - 120, now - 60);
+    const expired = await createInvite(SIGNING_SECRET, first.room_id, "guest", now - 120, now - 60);
     const expiredResponse = await workerFetch(`/v1/rooms/${first.room_id}/status`, authenticated(expired));
     expect(expiredResponse.status).toBe(401);
     await expect(expiredResponse.json()).resolves.toMatchObject({ error: "expired_invite" });
   });
 
-  it("enforces task, message count, and content-size limits", async () => {
-    const oversizedTask = "x".repeat(MAX_TASK_BYTES + 1);
-    const taskResponse = await workerFetch("/v1/rooms", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-room-creator-key": CREATOR_KEY },
-      body: JSON.stringify({ task: oversizedTask, ttl_seconds: 900 }),
-    });
-    expect(taskResponse.status).toBe(413);
-
-    const room = await createRoom();
-    const oversizedMessage = await workerFetch(
-      `/v1/rooms/${room.room_id}/messages`,
-      authenticated(room.invites.proposer, "POST", { text: "x".repeat(MAX_MESSAGE_BYTES + 1) }),
-    );
-    expect(oversizedMessage.status).toBe(413);
-
-    for (let index = 0; index < MAX_MESSAGES; index += 1) {
-      const response = await workerFetch(
-        `/v1/rooms/${room.room_id}/messages`,
-        authenticated(room.invites.proposer, "POST", { text: `message ${index + 1}` }),
-      );
-      expect(response.status).toBe(201);
-    }
-    const thirteenth = await workerFetch(
-      `/v1/rooms/${room.room_id}/messages`,
-      authenticated(room.invites.critic, "POST", { text: "one too many" }),
-    );
-    expect(thirteenth.status).toBe(409);
-
-    const finalRoom = await createRoom();
-    const oversizedFinal = await workerFetch(
-      `/v1/rooms/${finalRoom.room_id}/final`,
-      authenticated(finalRoom.invites.proposer, "POST", { markdown: "x".repeat(MAX_FINAL_BYTES + 1) }),
-    );
-    expect(oversizedFinal.status).toBe(413);
-  });
-
-  it("keeps a room after a bad collection digest, then deletes it after a valid one", async () => {
+  it("keeps a room after a bad digest, then deletes it after collection", async () => {
     const room = await createRoom();
     const submitted = await workerFetch(
       `/v1/rooms/${room.room_id}/final`,
-      authenticated(room.invites.proposer, "POST", { markdown: "# Final\n\nVerified." }),
+      authenticated(room.creator_capability, "POST", { markdown: "# Final\n\nVerified." }),
     );
     const { sha256 } = await submitted.json<{ sha256: string }>();
 
     const mismatch = await workerFetch(
       `/v1/rooms/${room.room_id}/collect`,
-      authenticated(room.invites.creator, "POST", { sha256: "0".repeat(64) }),
+      authenticated(room.creator_capability, "POST", { sha256: "0".repeat(64) }),
     );
     expect(mismatch.status).toBe(409);
-    expect((await workerFetch(`/v1/rooms/${room.room_id}/final`, authenticated(room.invites.creator))).status).toBe(200);
+    expect((await workerFetch(`/v1/rooms/${room.room_id}/final`, authenticated(room.creator_capability))).status).toBe(200);
 
     const collected = await workerFetch(
       `/v1/rooms/${room.room_id}/collect`,
-      authenticated(room.invites.creator, "POST", { sha256 }),
+      authenticated(room.creator_capability, "POST", { sha256 }),
     );
     expect(collected.status).toBe(200);
-    expect((await workerFetch(`/v1/rooms/${room.room_id}/status`, authenticated(room.invites.creator))).status).toBe(410);
+    expect((await workerFetch(`/v1/rooms/${room.room_id}/status`, authenticated(room.creator_capability))).status).toBe(410);
   });
 
-  it("makes destroy idempotently gone", async () => {
+  it("allows creator close and removes room state", async () => {
     const room = await createRoom();
-    expect((await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(room.invites.creator, "DELETE"))).status).toBe(200);
-    expect((await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(room.invites.creator, "DELETE"))).status).toBe(410);
+    expect((await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(room.creator_capability, "DELETE"))).status).toBe(200);
+    expect((await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(room.creator_capability, "DELETE"))).status).toBe(410);
   });
 
-  it("runs the real Durable Object alarm and removes SQLite state", async () => {
+  it("runs the Durable Object alarm and removes SQLite state", async () => {
     const roomId = crypto.randomUUID().replaceAll("-", "");
     const stub = bindings.ROOMS.get(bindings.ROOMS.idFromName(roomId));
     const now = Date.now();
@@ -196,8 +240,6 @@ describe("temporary agent room", () => {
       body: JSON.stringify({ room_id: roomId, task: "expires", created_at: now, expires_at: now + 60_000 }),
     });
     expect(initialized.status).toBe(201);
-    // A past-due alarm may run immediately during initialization; explicitly
-    // drain it when it is still pending, then assert the observable cleanup.
     await runDurableObjectAlarm(stub);
 
     const afterAlarm = await stub.fetch("https://room.internal/status", { headers: { "x-room-role": "creator" } });

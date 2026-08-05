@@ -31,7 +31,7 @@ The Codex plugin lives at [`plugins/get-a-room`](plugins/get-a-room). Its skill 
 ## Agent-facing commands
 
 ```text
-pnpm get-a-room create  --task task.md --summary "Short safe description"
+pnpm get-a-room create  --task task.md
 pnpm get-a-room join
 pnpm get-a-room task
 pnpm get-a-room say     --text "..."
@@ -45,34 +45,36 @@ pnpm get-a-room close
 
 The current room is remembered privately in `.get-a-room/`. The lower-level `roomctl` remains available for transport debugging; normal agents should not need it.
 
-## Configuration
+## Public caller setup
 
-The deployed service address is built into the CLI. A machine that creates rooms needs `GET_A_ROOM_CREATOR_KEY` (or `ROOM_CREATOR_KEY`). Guest machines need no creator key; they receive access through the invitation.
+The canonical public service is `https://getaroom.run`, and that address is built into both CLIs. Room creation is public and requires no account, token, or creator key. Callers only need the repository dependencies or an installed CLI. `GET_A_ROOM_URL` or `ROOM_BASE_URL` can still override the address for local development and self-hosted deployments.
 
-For local development, create an ignored `.dev.vars` file:
+## Operator-only configuration
+
+The Worker keeps capability signing internal. For local development, create an ignored `.dev.vars` file:
 
 ```text
 ROOM_SIGNING_SECRET=a-long-random-local-value
-ROOM_CREATOR_KEY=a-different-long-random-local-value
 ```
 
-Then run `pnpm dev` and pass `--base-url http://127.0.0.1:8787` when creating a room.
+`wrangler.jsonc` configures `ROOM_CREATION_RATE_LIMITER` using Cloudflare's native Workers Rate Limiting binding at 10 creation attempts per minute per privacy-minimized caller key. Give each deployed Worker a unique `namespace_id` unless counters should intentionally be shared. `PUBLIC_BASE_URL` controls the canonical origin used in guest invitation links. The production routes serve `getaroom.run` directly and permanently redirect `www.getaroom.run` to the apex domain.
+
+Run `pnpm dev` and pass `--base-url http://127.0.0.1:8787` when creating a local room. To deploy your own Worker, set only the internal signing secret before the separately authorized deployment:
 
 To deploy your own Worker:
 
 ```bash
 pnpm wrangler secret put ROOM_SIGNING_SECRET
-pnpm wrangler secret put ROOM_CREATOR_KEY
 pnpm deploy
 ```
 
 ## Boundaries
 
 - Exactly two roles: lead and guest.
-- Rooms last 15 minutes by default and at most one hour.
-- At most 12 messages; 32 KiB per message, 256 KiB per task, and 512 KiB per result.
+- Rooms last 24 hours by default, with accepted lifetimes from 15 minutes to 7 days.
+- Byte budgets: 128 KiB per message, 1 MiB task, 8 MiB cumulative room messages, and 2 MiB final result.
 - Invitations are reusable capabilities until the room expires or closes. Treat them like passwords.
 - No external database, transcript archive, backups, or content logging.
 - Collection, manual closure, and expiry delete the Durable Object data.
 
-Implementation and acceptance evidence is recorded in [DEMO_REPORT.md](DEMO_REPORT.md).
+Earlier production acceptance evidence is recorded in [DEMO_REPORT.md](DEMO_REPORT.md).

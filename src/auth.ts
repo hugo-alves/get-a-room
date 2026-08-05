@@ -103,20 +103,3 @@ export function bearerToken(request: Request): string {
   if (!match) throw new HttpError(401, "missing_invite", "A bearer invite is required");
   return match[1]!;
 }
-
-export function constantTimeEqualText(left: string, right: string): Promise<boolean> {
-  const keyData = encoder.encode("room-creator-key-comparison-v1");
-  return crypto.subtle
-    .importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
-    .then(async (key) => {
-      const [a, b] = await Promise.all([
-        crypto.subtle.sign("HMAC", key, encoder.encode(left)),
-        crypto.subtle.sign("HMAC", key, encoder.encode(right)),
-      ]);
-      const leftBytes = new Uint8Array(a);
-      const rightBytes = new Uint8Array(b);
-      let difference = 0;
-      for (let index = 0; index < leftBytes.length; index += 1) difference |= leftBytes[index]! ^ rightBytes[index]!;
-      return difference === 0;
-    });
-}
