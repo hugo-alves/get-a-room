@@ -256,6 +256,9 @@ describe("temporary agent room", () => {
     expect(html).toContain("A room is");
     expect(html).toContain('href="/new"');
     expect(html).toContain('href="/favicon.svg"');
+    expect(html).toContain('src="/get-a-room-launch.mp4"');
+    expect(html).toContain('href="https://github.com/hugo-alves/get-a-room"');
+    expect(page.headers.get("content-security-policy")).toContain("media-src 'self'");
     expect(html).not.toContain("Direction B");
 
     const favicon = await workerFetch("/favicon.svg");

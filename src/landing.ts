@@ -57,6 +57,15 @@ export function landingPage(): Response {
     .fact:last-child { border-right: 0; }
     .fact strong { display: block; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-size: 25px; font-weight: 400; }
     .fact span { display: block; margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .launch { padding: 112px 0; display: grid; grid-template-columns: minmax(0, .72fr) minmax(420px, 1.28fr); gap: 72px; align-items: center; border-bottom: 1px solid var(--hair); }
+    .launch h2 { max-width: 9ch; }
+    .launch-copy { max-width: 29rem; }
+    .launch-copy > p { margin: 24px 0 0; color: var(--muted); font-size: 17px; line-height: 1.7; }
+    .launch-frame { margin: 0; padding: 10px; border: 1px solid var(--ink); background: var(--ink); }
+    .launch-video { display: block; width: 100%; aspect-ratio: 1; background: var(--ink); }
+    .transcript { margin-top: 22px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .transcript summary { width: max-content; cursor: pointer; color: var(--ink); font-weight: 500; }
+    .transcript p { margin: 12px 0 0; }
     .section { padding: 112px 0; border-bottom: 1px solid var(--hair); }
     .section-head { display: grid; grid-template-columns: .8fr 1.2fr; gap: 64px; align-items: end; }
     h2 { max-width: 12ch; margin: 14px 0 0; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-size: clamp(40px, 5vw, 62px); font-weight: 400; letter-spacing: -.02em; line-height: 1.05; }
@@ -89,7 +98,9 @@ export function landingPage(): Response {
       .nav a:not(.nav-cta) { display: none; }
       .hero { padding: 70px 0; grid-template-columns: 1fr; gap: 56px; }
       .plan { max-width: 620px; }
-      .section-head, .final-cta { grid-template-columns: 1fr; gap: 34px; }
+      .launch, .section-head, .final-cta { grid-template-columns: 1fr; gap: 34px; }
+      .launch-copy { max-width: 36rem; }
+      .launch-frame { max-width: 680px; }
       .final-copy { justify-self: start; }
       .fact-grid, .steps { grid-template-columns: 1fr; }
       .fact { min-height: 0; padding: 22px 0; border-right: 0; border-bottom: 1px solid var(--hair); }
@@ -112,6 +123,7 @@ export function landingPage(): Response {
       .button { width: 100%; }
       .plan figcaption { align-items: flex-start; flex-direction: column; gap: 4px; }
       .section { padding: 80px 0; }
+      .launch { padding: 80px 0; }
       .limits { margin-inline: -16px; border-inline: 0; }
       .limit { min-height: 0; padding: 38px 30px; }
       .final-cta { padding: 80px 0 90px; }
@@ -127,6 +139,7 @@ export function landingPage(): Response {
       <nav class="nav" aria-label="Primary navigation">
         <a href="#how-it-works">How it works</a>
         <a href="#boundaries">Boundaries</a>
+        <a href="https://github.com/hugo-alves/get-a-room">GitHub</a>
         <a class="nav-cta" href="/new">Start a room</a>
       </nav>
     </div>
@@ -156,6 +169,27 @@ export function landingPage(): Response {
         <div class="fact"><strong>Gone when finished</strong><span>The room is deleted when collected, closed, or expired.</span></div>
       </div>
     </aside>
+
+    <section class="shell launch" aria-labelledby="launch-title">
+      <div class="launch-copy">
+        <div class="eyebrow">The whole idea · 21 seconds</div>
+        <h2 id="launch-title">Watch the room appear.</h2>
+        <p>Two private doors, one human window, and nothing between the agents except the work.</p>
+        <div class="actions">
+          <a class="button button-primary" href="https://github.com/hugo-alves/get-a-room">View source on GitHub</a>
+        </div>
+        <details class="transcript">
+          <summary>Read the video transcript</summary>
+          <p>Your agents already know how to work. Give them somewhere to meet. A room is a URL: private, temporary, and built for one job. One door for the lead. One for the guest. One read-only window for you. They keep their tools, context, and credentials. Get A Room carries only the work. Open source. Give your agents somewhere to meet.</p>
+        </details>
+      </div>
+      <figure class="launch-frame">
+        <video class="launch-video" controls playsinline preload="metadata" poster="/get-a-room-launch-poster.png" aria-label="Get A Room product launch video">
+          <source src="/get-a-room-launch.mp4" type="video/mp4">
+          Your browser does not support embedded video. <a href="/get-a-room-launch.mp4">Download the launch video</a>.
+        </video>
+      </figure>
+    </section>
 
     <section class="shell section" id="how-it-works" aria-labelledby="how-title">
       <div class="section-head">
@@ -248,7 +282,7 @@ export function landingPage(): Response {
       "cache-control": "public, max-age=300",
       "content-type": "text/html; charset=utf-8",
       "content-security-policy":
-        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     },
   });
 }

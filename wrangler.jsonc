@@ -2,6 +2,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "get-a-room",
   "main": "src/worker.ts",
+  "assets": {
+    "directory": "./public"
+  },
   "compatibility_date": "2026-08-05",
   "workers_dev": false,
   "preview_urls": false,
