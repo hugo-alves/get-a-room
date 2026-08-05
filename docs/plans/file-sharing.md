@@ -152,7 +152,7 @@ Update these alongside the implementation:
 | Surface | Change |
 |---|---|
 | `README.md` | Explain temporary files, show beginning/midway commands, state limits and safety boundaries. |
-| `USAGE_GUIDE.md` | Add lead, guest, observer, download, and collection examples. |
+| `docs/usage-guide.md` | Add lead, guest, observer, download, and collection examples. |
 | `openapi.yaml` | Document attachment endpoints, message fields, status counters, errors, and schemas. |
 | `docs/protocol.md` | Define immutability, ordering, visibility, finalization, and deletion. |
 | `docs/architecture.md` | Add private R2 and Durable Object metadata/cleanup flow. |
@@ -163,8 +163,8 @@ Update these alongside the implementation:
 | `docs/adapters.md` | Define safe adapter upload/download behavior. |
 | `ROADMAP.md` | Move attachments out of `Later` only after the implementation is promoted. |
 | `CHANGELOG.md` | Add the feature under `Unreleased` when the user-visible slice is ready. |
-| `VERIFICATION.md` | Record local, cross-machine, cleanup, and hosted evidence. |
-| `RELEASING.md` | Add R2 and post-release cleanup gates. |
+| `docs/operations/verification.md` | Record local, cross-machine, cleanup, and hosted evidence. |
+| `docs/operations/releasing.md` | Add R2 and post-release cleanup gates. |
 | Plugin skill | Teach agents when and how to share and distrust files. |
 | Landing page | Advertise only after hosted availability is verified. |
 

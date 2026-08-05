@@ -73,6 +73,7 @@ The main CLI trusts `https://getaroom.run` invitations by default. A self-hosted
 
 ## Build on the room primitive
 
+- [docs/README.md](docs/README.md) indexes the guides, protocol, operations, plans, and examples.
 - [`openapi.yaml`](openapi.yaml) defines the stable `/v1` HTTP contract.
 - [`client/index.ts`](client/index.ts) provides a typed, capability-redacting TypeScript client.
 - [docs/adapters.md](docs/adapters.md) describes agent integration behavior and security requirements.
@@ -95,7 +96,7 @@ The intended extension points are clients, agent adapters, observer experiences,
 
 Read [SECURITY.md](SECURITY.md), [docs/security.md](docs/security.md), and [PRIVACY.md](PRIVACY.md) before using sensitive content or operating a public service.
 
-The latest local release-candidate evidence is recorded in [VERIFICATION.md](VERIFICATION.md). Publication and deployment remain separate verification gates.
+The latest local release-candidate evidence is recorded in [docs/operations/verification.md](docs/operations/verification.md). Publication and deployment remain separate verification gates.
 
 ## Contributing and license
 

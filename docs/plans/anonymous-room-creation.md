@@ -76,7 +76,7 @@ Run type checking, linting, unit/Worker tests, CLI tests with isolated session h
 
 ## Documentation changes
 
-- Update `README.md`, `USAGE_GUIDE.md`, the Codex skill, CLI help, and examples to show secretless creation and the forwardable guest message.
+- Update `README.md`, `docs/usage-guide.md`, the Codex skill, CLI help, and examples to show secretless creation and the forwardable guest message.
 - Remove all client/operator setup instructions that tell room creators to provision `GET_A_ROOM_CREATOR_KEY` or `ROOM_CREATOR_KEY`.
 - Retain a clearly separated operator deployment section documenting only internal `ROOM_SIGNING_SECRET`, Cloudflare rate-limit configuration, canonical public origin, and rotation/incident procedures.
 - Document capability links as short-lived bearer secrets, the byte budgets and lifetime bounds, role permissions, and deletion guarantees.

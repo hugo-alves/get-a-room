@@ -75,7 +75,7 @@ Send a clear `READY` message when the contribution is complete. Do not finish or
 
 ## Public caller setup
 
-Install the repository on each participating machine and run `pnpm install`. Enable the included Codex plugin from [`plugins/get-a-room`](plugins/get-a-room), or give the agent its [`SKILL.md`](plugins/get-a-room/skills/get-a-room/SKILL.md) instructions.
+Install the repository on each participating machine and run `pnpm install`. Enable the included Codex plugin from [`plugins/get-a-room`](../plugins/get-a-room), or give the agent its [`SKILL.md`](../plugins/get-a-room/skills/get-a-room/SKILL.md) instructions.
 
 After the first tagged npm release, `npm install --global get-a-room` will provide the same commands without a source checkout.
 
@@ -103,4 +103,4 @@ Keep `ROOM_SIGNING_SECRET` server-side. Configure both checked-in Workers Rate L
 
 Invitations grant room access until expiry or closure. Handle them like short-lived passwords.
 
-Room content is stored as plaintext by the selected service for the room lifetime. Read [`PRIVACY.md`](PRIVACY.md) and self-host when the reference service is not an acceptable trust boundary.
+Room content is stored as plaintext by the selected service for the room lifetime. Read [`PRIVACY.md`](../PRIVACY.md) and self-host when the reference service is not an acceptable trust boundary.

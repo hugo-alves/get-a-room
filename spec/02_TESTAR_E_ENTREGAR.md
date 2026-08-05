@@ -79,6 +79,6 @@ Além do código, entregar:
 - `README.md`: instalação, configuração, desenvolvimento, testes, publicação e demonstração;
 - `.env.example`: apenas nomes e exemplos claramente falsos;
 - `DEMO_REPORT.md`: resultado dos comandos, itens aceites, endereço publicado se existir e decisões relevantes;
-- `result.example.md`: exemplo inofensivo do formato final, sem conversa nem convites.
+- `examples/result.md`: exemplo inofensivo do formato final, sem conversa nem convites.
 
 No `DEMO_REPORT.md`, registe o estado local e remoto, comandos, mensagens, SHA-256, recolha, expiração e o próximo comando se algo ficar pendente.

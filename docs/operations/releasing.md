@@ -6,7 +6,7 @@ This is the maintainer checklist for a public release.
 
 1. Start from a clean checkout of the intended commit.
 2. Run `pnpm install --frozen-lockfile` and `pnpm verify`.
-3. Run the Git-history secret scan documented in `docs/security.md`.
+3. Run the Git-history secret scan documented in [`docs/security.md`](../security.md).
 4. Run `pnpm pack --dry-run` and inspect every packaged path.
 5. Exercise create, join, observe, finish, collect, and post-collection `410` behavior using isolated local session homes.
 6. If attachments are enabled, exchange and verify a harmless file across isolated environments, then confirm collection and expiry remove its R2 object.
