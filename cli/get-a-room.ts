@@ -10,12 +10,14 @@ type AgentRole = "lead" | "guest";
 
 interface Session {
   version: 1;
+  session_id?: string;
   room_id: string;
   base_url: string;
   role: AgentRole;
   invite: string;
   creator_invite: string | null;
   guest_invitation: string | null;
+  observer_url?: string | null;
   expires_at: string | null;
   last_number: number;
   state: "open" | "finished" | "collected" | "closed";
@@ -27,6 +29,8 @@ interface CreatedRoom {
   creator_capability: string;
   guest_invitation_url: string;
   guest_invitation_message: string;
+  observer_url: string | null;
+  observer_message: string | null;
 }
 
 interface RoomMessage {
@@ -44,6 +48,7 @@ const VALUE_FLAGS = new Set([
   "task",
   "ttl",
   "invitation",
+  "session",
   "room",
   "text",
   "seconds",
@@ -68,6 +73,7 @@ Usage:
 The current room is remembered in .get-a-room/. Configuration can come from:
   GET_A_ROOM_URL or ROOM_BASE_URL
   GET_A_ROOM_INVITATION (for join)
+  GET_A_ROOM_SESSION (for selecting a local session)
 
 Use --json for machine-readable output.`;
 
@@ -237,10 +243,17 @@ async function writePrivate(path: string, content: string): Promise<void> {
   await rename(temporary, path);
 }
 
-async function saveSession(session: Session): Promise<void> {
+function sessionIdIsValid(value: string): boolean {
+  return /^s_[0-9a-f]{24}$/u.test(value);
+}
+
+async function saveSession(session: Session): Promise<string> {
   const home = sessionHome();
-  await writePrivate(join(home, `${session.room_id}.json`), `${JSON.stringify(session, null, 2)}\n`);
-  await writePrivate(join(home, "active"), `${session.room_id}\n`);
+  const sessionId = session.session_id ?? `s_${randomBytes(12).toString("hex")}`;
+  session.session_id = sessionId;
+  await writePrivate(join(home, "sessions", `${sessionId}.json`), `${JSON.stringify(session, null, 2)}\n`);
+  await writePrivate(join(home, "active"), `${sessionId}\n`);
+  return sessionId;
 }
 
 async function saveSessionTombstone(session: Session, state: "collected" | "closed"): Promise<void> {
@@ -248,6 +261,7 @@ async function saveSessionTombstone(session: Session, state: "collected" | "clos
   session.invite = "";
   session.creator_invite = null;
   session.guest_invitation = null;
+  session.observer_url = null;
   await saveSession(session);
 }
 
@@ -255,12 +269,14 @@ function isSession(value: unknown): value is Session {
   if (!isRecord(value)) return false;
   return (
     value.version === 1 &&
+    (value.session_id === undefined || (typeof value.session_id === "string" && sessionIdIsValid(value.session_id))) &&
     typeof value.room_id === "string" &&
     typeof value.base_url === "string" &&
     (value.role === "lead" || value.role === "guest") &&
     typeof value.invite === "string" &&
     (typeof value.creator_invite === "string" || value.creator_invite === null) &&
     (typeof value.guest_invitation === "string" || value.guest_invitation === null) &&
+    (typeof value.observer_url === "string" || value.observer_url === null || value.observer_url === undefined) &&
     (typeof value.expires_at === "string" || value.expires_at === null) &&
     Number.isInteger(value.last_number) &&
     ["open", "finished", "collected", "closed"].includes(String(value.state))
@@ -269,17 +285,26 @@ function isSession(value: unknown): value is Session {
 
 async function loadSession(flags: Flags): Promise<Session> {
   const home = sessionHome();
-  let roomId = flag(flags, "room");
-  if (!roomId) {
+  const selectedSession = flag(flags, "session") ?? process.env.GET_A_ROOM_SESSION;
+  if (selectedSession !== undefined && !sessionIdIsValid(selectedSession)) {
+    throw new CommandError("The local session ID is invalid");
+  }
+  let reference = selectedSession ?? flag(flags, "room");
+  if (!reference) {
     try {
-      roomId = (await readFile(join(home, "active"), "utf8")).trim();
+      reference = (await readFile(join(home, "active"), "utf8")).trim();
     } catch {
       throw new CommandError("There is no active room on this machine");
     }
   }
-  if (!/^[0-9a-f]{32}$/u.test(roomId)) throw new CommandError("The saved room is invalid");
+  const path = sessionIdIsValid(reference)
+    ? join(home, "sessions", `${reference}.json`)
+    : /^[0-9a-f]{32}$/u.test(reference)
+      ? join(home, `${reference}.json`)
+      : null;
+  if (!path) throw new CommandError("The saved room or local session is invalid");
   try {
-    const value: unknown = JSON.parse(await readFile(join(home, `${roomId}.json`), "utf8"));
+    const value: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!isSession(value)) throw new Error("invalid session");
     return value;
   } catch {
@@ -294,12 +319,16 @@ function createdRoom(value: unknown): CreatedRoom {
   const creator = value.creator_capability;
   const guestInvitationUrl = value.guest_invitation_url;
   const guestInvitationMessage = value.guest_invitation_message;
+  const observerUrl = value.observer_url;
+  const observerMessage = value.observer_message;
   if (
     typeof roomId !== "string" ||
     typeof expiresAt !== "string" ||
     typeof creator !== "string" ||
     typeof guestInvitationUrl !== "string" ||
-    typeof guestInvitationMessage !== "string"
+    typeof guestInvitationMessage !== "string" ||
+    (typeof observerUrl !== "string" && observerUrl !== undefined) ||
+    (typeof observerMessage !== "string" && observerMessage !== undefined)
   ) {
     throw new CommandError("The room service returned an invalid response");
   }
@@ -309,6 +338,8 @@ function createdRoom(value: unknown): CreatedRoom {
     creator_capability: creator,
     guest_invitation_url: guestInvitationUrl,
     guest_invitation_message: guestInvitationMessage,
+    observer_url: observerUrl ?? null,
+    observer_message: observerMessage ?? null,
   };
 }
 
@@ -332,7 +363,7 @@ async function create(flags: Flags, json: boolean): Promise<void> {
     [],
   );
   const room = createdRoom(body);
-  await saveSession({
+  const sessionId = await saveSession({
     version: 1,
     room_id: room.room_id,
     base_url: url,
@@ -340,6 +371,7 @@ async function create(flags: Flags, json: boolean): Promise<void> {
     invite: room.creator_capability,
     creator_invite: room.creator_capability,
     guest_invitation: room.guest_invitation_message,
+    observer_url: room.observer_url,
     expires_at: room.expires_at,
     last_number: 0,
     state: "open",
@@ -347,16 +379,22 @@ async function create(flags: Flags, json: boolean): Promise<void> {
   if (json) {
     print({
       room_id: room.room_id,
+      session_id: sessionId,
       role: "lead",
       expires_at: room.expires_at,
       invitation: room.guest_invitation_message,
       guest_invitation_url: room.guest_invitation_url,
       guest_invitation_message: room.guest_invitation_message,
+      observer_url: room.observer_url,
+      observer_message: room.observer_message,
     }, true);
     return;
   }
+  const observerNote = room.observer_url
+    ? `\n\nHumans can watch the room live (read-only) at this private link:\n${room.observer_url}`
+    : "";
   print(
-    `Your room is ready. You joined as the lead agent.\n\nSend this entire invitation to the other agent:\n\n---\n${room.guest_invitation_message}\n---\n\nYou can also use this invitation URL:\n${room.guest_invitation_url}`,
+    `Your room is ready. You joined as the lead agent.\nLocal session ID (keep internal): ${sessionId}\n\nSend this entire invitation to the other agent:\n\n---\n${room.guest_invitation_message}\n---\n\nYou can also use this invitation URL:\n${room.guest_invitation_url}${observerNote}`,
     false,
   );
 }
@@ -383,7 +421,7 @@ async function joinRoom(flags: Flags, json: boolean): Promise<void> {
   const task = isRecord(taskBody) && typeof taskBody.task === "string" ? taskBody.task : undefined;
   if (task === undefined) throw new CommandError("The room did not provide a readable task");
   const expiresAt = isRecord(statusBody) && typeof statusBody.expires_at === "string" ? statusBody.expires_at : null;
-  await saveSession({
+  const sessionId = await saveSession({
     version: 1,
     room_id: claims.room_id,
     base_url: parsed.base_url,
@@ -395,7 +433,12 @@ async function joinRoom(flags: Flags, json: boolean): Promise<void> {
     last_number: 0,
     state: "open",
   });
-  print(json ? { room_id: claims.room_id, role: "guest", expires_at: expiresAt, task } : `You joined the room as the guest agent.\n\nTask:\n${task}`, json);
+  print(
+    json
+      ? { room_id: claims.room_id, session_id: sessionId, role: "guest", expires_at: expiresAt, task }
+      : `You joined the room as the guest agent.\nLocal session ID (keep internal): ${sessionId}\n\nTask:\n${task}`,
+    json,
+  );
 }
 
 async function task(flags: Flags, json: boolean): Promise<void> {
@@ -557,7 +600,14 @@ async function collect(flags: Flags, json: boolean): Promise<void> {
 async function showInvitation(flags: Flags, json: boolean): Promise<void> {
   const session = await loadSession(flags);
   if (!session.guest_invitation) throw new CommandError("This session does not have a guest invitation");
-  print(json ? { invitation: session.guest_invitation } : session.guest_invitation, json);
+  if (json) {
+    print({ invitation: session.guest_invitation, observer_url: session.observer_url ?? null }, true);
+    return;
+  }
+  const observerNote = session.observer_url
+    ? `\n\nHumans can watch the room live (read-only) at this private link:\n${session.observer_url}`
+    : "";
+  print(`${session.guest_invitation}${observerNote}`, false);
 }
 
 async function close(flags: Flags, json: boolean): Promise<void> {

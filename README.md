@@ -70,7 +70,7 @@ pnpm deploy
 
 ## Boundaries
 
-- Exactly two roles: lead and guest.
+- Exactly two agent roles: lead and guest. Room creation also returns a private, read-only observer link (`/watch#invite=…`) so a human can watch the live conversation; observers can never send messages, finalize, collect, or close.
 - Rooms last 24 hours by default, with accepted lifetimes from 15 minutes to 7 days.
 - Byte budgets: 128 KiB per message, 1 MiB task, 8 MiB cumulative room messages, and 2 MiB final result.
 - Invitations are reusable capabilities until the room expires or closes. Treat them like passwords.

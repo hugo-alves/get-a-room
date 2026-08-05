@@ -21,6 +21,12 @@ interface CreatedRoom {
   creator_capability: string;
   guest_invitation_url: string;
   guest_invitation_message: string;
+  observer_url: string;
+  observer_message: string;
+}
+
+function inviteFromUrl(url: string): string {
+  return new URLSearchParams(new URL(url).hash.slice(1)).get("invite")!;
 }
 
 interface MessageList {
@@ -174,7 +180,7 @@ describe("temporary agent room", () => {
 
   it("enforces guest role boundaries", async () => {
     const room = await createRoom();
-    const guest = new URLSearchParams(new URL(room.guest_invitation_url).hash.slice(1)).get("invite")!;
+    const guest = inviteFromUrl(room.guest_invitation_url);
 
     const final = await workerFetch(
       `/v1/rooms/${room.room_id}/final`,
@@ -183,6 +189,92 @@ describe("temporary agent room", () => {
     expect(final.status).toBe(403);
     const close = await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(guest, "DELETE"));
     expect(close.status).toBe(403);
+  });
+
+  it("serves a safe watch page for human observers", async () => {
+    const response = await workerFetch("/watch");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    const csp = response.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("connect-src 'self'");
+    const html = await response.text();
+    expect(html).toContain("Read-only live view");
+  });
+
+  it("returns an observer watch link alongside creator and guest capabilities", async () => {
+    const room = await createRoom();
+    expect(room.guest_invitation_message).toContain("You have been invited to collaborate as the guest agent.");
+    expect(room.observer_url).toMatch(/^https:\/\/getaroom\.run\/watch#invite=/);
+    expect(room.observer_message).toContain(room.observer_url);
+    expect(room.observer_message).not.toContain(room.creator_capability);
+    const observer = inviteFromUrl(room.observer_url);
+    expect(observer).not.toBe(room.creator_capability);
+    expect(observer).not.toBe(inviteFromUrl(room.guest_invitation_url));
+  });
+
+  it("lets an observer read status, task, transcript, and the available final", async () => {
+    const room = await createRoom("Observed task");
+    const observer = inviteFromUrl(room.observer_url);
+
+    const status = await workerFetch(`/v1/rooms/${room.room_id}/status`, authenticated(observer));
+    expect(status.status).toBe(200);
+
+    const task = await workerFetch(`/v1/rooms/${room.room_id}/task`, authenticated(observer));
+    expect(task.status).toBe(200);
+    await expect(task.json()).resolves.toEqual({ task: "Observed task" });
+
+    const sent = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(room.creator_capability, "POST", { text: "hello guest" }),
+    );
+    expect(sent.status).toBe(201);
+    const messages = await workerFetch(`/v1/rooms/${room.room_id}/messages`, authenticated(observer));
+    const body = await messages.json<MessageList>();
+    expect(body.messages.map(({ role, text }) => ({ role, text }))).toEqual([{ role: "creator", text: "hello guest" }]);
+
+    const early = await workerFetch(`/v1/rooms/${room.room_id}/final`, authenticated(observer));
+    expect(early.status).toBe(409);
+
+    const finalized = await workerFetch(
+      `/v1/rooms/${room.room_id}/final`,
+      authenticated(room.creator_capability, "POST", { markdown: "# Done" }),
+    );
+    expect(finalized.status).toBe(201);
+    const final = await workerFetch(`/v1/rooms/${room.room_id}/final`, authenticated(observer));
+    expect(final.status).toBe(200);
+    await expect(final.json()).resolves.toMatchObject({ markdown: "# Done" });
+
+    const guest = inviteFromUrl(room.guest_invitation_url);
+    expect((await workerFetch(`/v1/rooms/${room.room_id}/final`, authenticated(guest))).status).toBe(403);
+  });
+
+  it("forbids every observer mutation with 403 and reports 410 after closure", async () => {
+    const room = await createRoom();
+    const observer = inviteFromUrl(room.observer_url);
+
+    const message = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(observer, "POST", { text: "not allowed" }),
+    );
+    expect(message.status).toBe(403);
+    const final = await workerFetch(
+      `/v1/rooms/${room.room_id}/final`,
+      authenticated(observer, "POST", { markdown: "# Not allowed" }),
+    );
+    expect(final.status).toBe(403);
+    const collect = await workerFetch(
+      `/v1/rooms/${room.room_id}/collect`,
+      authenticated(observer, "POST", { sha256: "0".repeat(64) }),
+    );
+    expect(collect.status).toBe(403);
+    const destroy = await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(observer, "DELETE"));
+    expect(destroy.status).toBe(403);
+
+    const closed = await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(room.creator_capability, "DELETE"));
+    expect(closed.status).toBe(200);
+    expect((await workerFetch(`/v1/rooms/${room.room_id}/status`, authenticated(observer))).status).toBe(410);
   });
 
   it("rejects tampered, expired, and cross-room capabilities", async () => {

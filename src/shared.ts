@@ -8,8 +8,8 @@ export const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const CREATION_RATE_LIMIT_MAX = 10;
 export const CREATION_RATE_LIMIT_WINDOW_SECONDS = 60;
 
-export type InviteRole = "creator" | "guest";
-export type ParticipantRole = InviteRole;
+export type InviteRole = "creator" | "guest" | "observer";
+export type ParticipantRole = "creator" | "guest";
 export type RoomStatus = "open" | "finalized" | "destroyed";
 
 export interface Env {
@@ -97,10 +97,14 @@ export function requiredString(
 }
 
 export function isInviteRole(value: unknown): value is InviteRole {
-  return value === "creator" || value === "guest";
+  return value === "creator" || value === "guest" || value === "observer";
 }
 
 export function isParticipantRole(value: unknown): value is ParticipantRole {
+  return value === "creator" || value === "guest";
+}
+
+export function isReaderRole(value: unknown): value is InviteRole {
   return isInviteRole(value);
 }
 

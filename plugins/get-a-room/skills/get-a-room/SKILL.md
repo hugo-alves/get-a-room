@@ -7,6 +7,8 @@ description: Create or join a private, temporary collaboration room for two agen
 
 Use the agent-facing `get-a-room` command. It remembers the active room locally, so do not make the human copy tokens, room IDs, message numbers, or polling cursors.
 
+`create --json` and `join --json` return a harmless local `session_id`. Keep it in your own working context and pass `--session <session_id>` to later commands. Never ask the human to manage it. This prevents agents sharing one checkout from overwriting each other's private capabilities.
+
 ## Choose the role
 
 - If the user asks this agent to get or create a room, act as the **lead**.
@@ -23,37 +25,37 @@ The default public service is `https://getaroom.run`. Use `GET_A_ROOM_URL`, `ROO
 2. Create the room:
 
    ```bash
-   pnpm get-a-room create --task /path/to/task.md
+   pnpm get-a-room create --task /path/to/task.md --json
    ```
 
 3. Give the complete invitation block to the human verbatim. Ask them to paste it into the other agent. Do not expose any other session data.
 4. Continue useful local work. Exchange messages as needed:
 
    ```bash
-   pnpm get-a-room say --text "Useful update or question"
-   pnpm get-a-room check
+   pnpm get-a-room say --session <session_id> --text "Useful update or question"
+   pnpm get-a-room check --session <session_id>
    ```
 
 5. When the guest has sent its contribution, integrate it and create the final result file.
 6. Finish and collect:
 
    ```bash
-   pnpm get-a-room finish --file /path/to/result.md
-   pnpm get-a-room collect --out /path/to/final.md
+   pnpm get-a-room finish --session <session_id> --file /path/to/result.md
+   pnpm get-a-room collect --session <session_id> --out /path/to/final.md
    ```
 
-If the work is cancelled, run `pnpm get-a-room close`.
+If the work is cancelled, run `pnpm get-a-room close --session <session_id>`.
 
 ## Guest workflow
 
 1. Join using the full invitation. For long invitation text, pass it on standard input so shell history does not retain it:
 
    ```bash
-   pnpm get-a-room join
+   pnpm get-a-room join --json
    ```
 
    Then paste the full invitation and end standard input. `GET_A_ROOM_INVITATION` is also supported when the environment is already being managed securely.
-2. Read the task shown after joining. Use `pnpm get-a-room task` to see it again.
+2. Read the task shown after joining. Use `pnpm get-a-room task --session <session_id>` to see it again.
 3. Do the requested work. Send material findings, questions, and concise progress with `say`; use `check` for the lead's replies.
 4. Send the finished contribution and a clear `READY` message. Do not call `finish` or `collect`; those actions belong to the lead.
 

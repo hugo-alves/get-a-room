@@ -34,6 +34,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     return Response.redirect(url.toString(), 308);
   }
   if (request.method === "GET" && url.pathname === "/join") return joinPage();
+  if (request.method === "GET" && url.pathname === "/watch") return watchPage();
+  if (request.method === "GET" && url.pathname === "/new") return newRoomPage();
   if (request.method === "POST" && url.pathname === "/v1/rooms") return createRoom(request, env);
 
   const match = /^\/v1\/rooms\/([^/]+)(?:\/(status|task|messages|final|collect))?$/u.exec(url.pathname);
@@ -101,6 +103,170 @@ function joinPage(): Response {
   });
 }
 
+function watchPage(): Response {
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Get A Room — Live view</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.55 system-ui, sans-serif; background: #f4f1ea; color: #191713; }
+    body { margin: 0 auto; max-width: 44rem; padding: 2rem 1.5rem 4rem; }
+    h1 { font-size: 2rem; letter-spacing: -.04em; margin: 0; }
+    .sub { color: #6b6459; margin: .25rem 0 1.5rem; }
+    .panel { background: #fff; border: 1px solid #e2ddd2; border-radius: .5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .state { font-weight: 600; }
+    .state.over { color: #a33; }
+    .note { color: #6b6459; }
+    details > summary { cursor: pointer; font-weight: 600; }
+    pre { white-space: pre-wrap; word-break: break-word; font: .85rem/1.5 ui-monospace, monospace; margin: .75rem 0 0; }
+    .m { border-left: 4px solid #ccc; padding: .25rem 0 .25rem .85rem; margin: .85rem 0; }
+    .m.creator { border-color: #eb5e28; }
+    .m.guest { border-color: #2a6f97; }
+    .m .who { font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    .m.creator .who { color: #b84517; }
+    .m.guest .who { color: #2a6f97; }
+    .m .when { color: #6b6459; font-size: .8rem; margin-left: .5rem; }
+    .m p { margin: .25rem 0 0; white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <h1>Get A Room</h1>
+  <p class="sub">Read-only live view. You cannot send messages from this page.</p>
+  <div class="panel">
+    <div><span class="state" id="state">Connecting…</span></div>
+    <div class="note" id="expiry"></div>
+    <div class="note" id="counts"></div>
+  </div>
+  <div class="panel" id="task-panel" hidden>
+    <details><summary>Task</summary><pre id="task"></pre></details>
+  </div>
+  <div class="panel" id="final-panel" hidden>
+    <details open><summary>Final result</summary><pre id="final"></pre></details>
+  </div>
+  <div id="transcript"></div>
+  <p class="note" id="note"></p>
+  <script>
+  (function () {
+    "use strict";
+    function el(id) { return document.getElementById(id); }
+    var stateEl = el("state"), expiryEl = el("expiry"), countsEl = el("counts"), noteEl = el("note");
+
+    var invite = new URLSearchParams(location.hash.slice(1)).get("invite") || "";
+    var claims = null;
+    try {
+      var payload = invite.split(".")[0] || "";
+      var padded = payload.replace(/-/g, "+").replace(/_/g, "/");
+      padded += "===".slice(0, (4 - (padded.length % 4)) % 4);
+      claims = JSON.parse(atob(padded));
+    } catch (error) { claims = null; }
+    if (!claims || claims.role !== "observer" || typeof claims.room_id !== "string" || !/^[0-9a-f]{32}$/.test(claims.room_id)) {
+      stateEl.textContent = "Not a watch link";
+      stateEl.className = "state over";
+      noteEl.textContent = "This page needs a complete observer link ending in #invite=… Ask the room creator for a fresh live-view link.";
+      return;
+    }
+
+    var base = "/v1/rooms/" + claims.room_id;
+    var headers = { authorization: "Bearer " + invite };
+    var lastNumber = 0, haveTask = false, haveFinal = false, over = false, timer = null;
+
+    function finish(state, note) {
+      over = true;
+      if (timer) clearInterval(timer);
+      stateEl.textContent = state;
+      stateEl.className = "state over";
+      noteEl.textContent = note;
+    }
+
+    function addMessage(message) {
+      var wrap = document.createElement("div");
+      wrap.className = "m " + (message.role === "creator" ? "creator" : "guest");
+      var who = document.createElement("span");
+      who.className = "who";
+      who.textContent = message.role === "creator" ? "Creator" : "Guest";
+      var when = document.createElement("span");
+      when.className = "when";
+      if (message.created_at) when.textContent = new Date(message.created_at).toLocaleString();
+      var text = document.createElement("p");
+      text.textContent = message.text;
+      wrap.appendChild(who);
+      wrap.appendChild(when);
+      wrap.appendChild(text);
+      el("transcript").appendChild(wrap);
+    }
+
+    function get(path) { return fetch(base + path, { headers: headers }); }
+
+    async function tick() {
+      if (over) return;
+      var status;
+      try {
+        status = await get("/status");
+      } catch (error) {
+        noteEl.textContent = "Connection lost. Retrying…";
+        return;
+      }
+      if (status.status === 401) return finish("Link expired", "This observer link is no longer valid.");
+      if (status.status === 410) return finish("Room over", "The room was collected, closed, or expired. Its data has been deleted.");
+      if (!status.ok) { noteEl.textContent = "Temporary error. Retrying…"; return; }
+      var info = await status.json();
+      noteEl.textContent = "";
+      stateEl.textContent = info.status === "open" ? "Live" : "Finalized";
+      stateEl.className = "state";
+      expiryEl.textContent = "Room expires " + new Date(info.expires_at).toLocaleString();
+      countsEl.textContent = info.message_count + " message" + (info.message_count === 1 ? "" : "s");
+
+      if (!haveTask) {
+        var task = await get("/task");
+        if (task.ok) {
+          var taskBody = await task.json();
+          el("task").textContent = taskBody.task;
+          el("task-panel").hidden = false;
+          haveTask = true;
+        }
+      }
+
+      var messages = await get("/messages?after=" + lastNumber);
+      if (messages.ok) {
+        var list = (await messages.json()).messages || [];
+        for (var index = 0; index < list.length; index += 1) {
+          addMessage(list[index]);
+          if (list[index].number > lastNumber) lastNumber = list[index].number;
+        }
+      }
+
+      if (info.has_final && !haveFinal) {
+        var final = await get("/final");
+        if (final.ok) {
+          var finalBody = await final.json();
+          el("final").textContent = finalBody.markdown;
+          el("final-panel").hidden = false;
+          haveFinal = true;
+        }
+      }
+    }
+
+    tick();
+    timer = setInterval(tick, 4000);
+  })();
+  </script>
+</body>
+</html>`;
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "content-security-policy":
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+    },
+  });
+}
+
 async function createRoom(request: Request, env: Env): Promise<Response> {
   rejectOversizedCreationBody(request);
   const body = await readJson(request);
@@ -118,11 +284,14 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
   const expiresAtMs = expiresAtSeconds * 1000;
   const expiresAt = new Date(expiresAtMs).toISOString();
   const baseUrl = publicBaseUrl(request, env);
-  const [creator, guest] = await Promise.all([
+  const [creator, guest, observer] = await Promise.all([
     createInvite(env.ROOM_SIGNING_SECRET, roomId, "creator", issuedAt, expiresAtSeconds),
     createInvite(env.ROOM_SIGNING_SECRET, roomId, "guest", issuedAt, expiresAtSeconds),
+    createInvite(env.ROOM_SIGNING_SECRET, roomId, "observer", issuedAt, expiresAtSeconds),
   ]);
   const guestInviteUrl = `${baseUrl}/join#invite=${encodeURIComponent(guest)}`;
+  const leadInviteUrl = `${baseUrl}/join#invite=${encodeURIComponent(creator)}`;
+  const observerUrl = `${baseUrl}/watch#invite=${encodeURIComponent(observer)}`;
 
   const stub = env.ROOMS.get(env.ROOMS.idFromName(roomId));
   const initialization = await stub.fetch("https://room.internal/_initialize", {
@@ -139,6 +308,10 @@ async function createRoom(request: Request, env: Env): Promise<Response> {
       creator_capability: creator,
       guest_invitation_url: guestInviteUrl,
       guest_invitation_message: invitationMessage(guestInviteUrl, expiresAt),
+      lead_invitation_url: leadInviteUrl,
+      lead_invitation_message: leadInvitationMessage(leadInviteUrl, expiresAt),
+      observer_url: observerUrl,
+      observer_message: observerMessage(observerUrl, expiresAt),
     },
     201,
   );
@@ -186,11 +359,34 @@ function publicBaseUrl(request: Request, env: Env): string {
   return parsed.toString().replace(/\/$/u, "");
 }
 
+function leadInvitationMessage(leadInviteUrl: string, expiresAt: string): string {
+  return [
+    "Get A Room lead invitation",
+    "",
+    "Give this complete invitation to YOUR agent. It becomes the lead, runs the room, and owns the final result:",
+    leadInviteUrl,
+    "",
+    `This private invitation can also finalize and close the room. It expires at ${expiresAt}. Treat it like a password.`,
+  ].join("\n");
+}
+
+function observerMessage(observerUrl: string, expiresAt: string): string {
+  return [
+    "Get A Room live view",
+    "",
+    "Open this private link in a browser to watch the room conversation live:",
+    observerUrl,
+    "",
+    `It is read-only and expires at ${expiresAt}. Treat it like a password.`,
+  ].join("\n");
+}
+
 function invitationMessage(guestInviteUrl: string, expiresAt: string): string {
   return [
     "Get A Room invitation",
     "",
-    "Give this complete invitation to the guest agent:",
+    "You have been invited to collaborate as the guest agent.",
+    "Join the private room using this complete URL:",
     guestInviteUrl,
     "",
     `This private invitation expires at ${expiresAt}. Treat it like a password.`,

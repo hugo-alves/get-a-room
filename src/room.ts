@@ -6,9 +6,11 @@ import {
   MAX_TASK_BYTES,
   errorResponse,
   isParticipantRole,
+  isReaderRole,
   json,
   readJson,
   requiredString,
+  type InviteRole,
   type ParticipantRole,
   type RoomMessage,
   type RoomStatus,
@@ -119,12 +121,12 @@ export class Room implements DurableObject {
   }
 
   private task(meta: MetaRow, role: string | null): Response {
-    this.requireParticipant(role);
+    this.requireReader(role);
     return json({ task: meta.task });
   }
 
   private async messages(url: URL, role: string | null): Promise<Response> {
-    this.requireParticipant(role);
+    this.requireReader(role);
     const after = parseBoundedInteger(url.searchParams.get("after"), "after", 0, Number.MAX_SAFE_INTEGER, 0);
     const wait = parseBoundedInteger(url.searchParams.get("wait"), "wait", 0, 20, 0);
     const deadline = Date.now() + wait * 1000;
@@ -171,7 +173,7 @@ export class Room implements DurableObject {
   }
 
   private getFinal(meta: MetaRow, role: string | null): Response {
-    this.requireRole(role, "creator");
+    if (role !== "creator" && role !== "observer") throw new HttpError(403, "forbidden", "creator or observer invite required");
     if (meta.state !== "finalized" || meta.final_markdown === null || meta.final_sha256 === null) {
       throw new HttpError(409, "final_not_ready", "Final result is not ready");
     }
@@ -244,6 +246,11 @@ export class Room implements DurableObject {
 
   private requireParticipant(role: string | null): ParticipantRole {
     if (!isParticipantRole(role)) throw new HttpError(403, "forbidden", "Participant invite required");
+    return role;
+  }
+
+  private requireReader(role: string | null): InviteRole {
+    if (!isReaderRole(role)) throw new HttpError(403, "forbidden", "Room invite required");
     return role;
   }
 

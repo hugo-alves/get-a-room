@@ -22,7 +22,7 @@ Create a clear task file, then run:
 pnpm get-a-room create --task task.md
 ```
 
-Return the printed invitation to the human exactly as shown. Keep working instead of waiting idly. Use these commands to coordinate:
+Return the printed invitation to the human exactly as shown. The output also includes a private read-only watch link the human can open in a browser to observe the room live; share it only with the human and treat it like a password. Keep working instead of waiting idly. Use these commands to coordinate:
 
 ```bash
 pnpm get-a-room say --text "Question or useful update"
