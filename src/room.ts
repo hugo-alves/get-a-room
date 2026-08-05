@@ -1,7 +1,12 @@
 import {
   HttpError,
+  MAX_CONCURRENT_LONG_POLLS,
   MAX_FINAL_BYTES,
+  MAX_LONG_POLL_SECONDS,
   MAX_MESSAGE_BYTES,
+  MAX_MESSAGE_RESPONSE_BYTES,
+  MAX_MESSAGES_PER_RESPONSE,
+  MAX_MESSAGES_PER_ROOM,
   MAX_TOTAL_MESSAGE_BYTES,
   MAX_TASK_BYTES,
   errorResponse,
@@ -36,6 +41,7 @@ interface MessageRow extends Record<string, SqlStorageValue> {
 
 export class Room implements DurableObject {
   private readonly sql: SqlStorage;
+  private activeLongPolls = 0;
 
   constructor(private readonly state: DurableObjectState) {
     this.sql = state.storage.sql;
@@ -78,7 +84,8 @@ export class Room implements DurableObject {
 
   private async initialize(request: Request): Promise<Response> {
     if (this.getMeta()) throw new HttpError(409, "room_exists", "Room already exists");
-    const body = await readJson(request);
+    const body = await readJson(request, MAX_TASK_BYTES + 4096);
+    assertFields(body, ["room_id", "task", "created_at", "expires_at"]);
     const roomId = requiredString(body.room_id, "room_id", 64);
     const task = requiredString(body.task, "task", MAX_TASK_BYTES, { allowEmpty: true });
     const createdAt = body.created_at;
@@ -128,28 +135,44 @@ export class Room implements DurableObject {
   private async messages(url: URL, role: string | null): Promise<Response> {
     this.requireReader(role);
     const after = parseBoundedInteger(url.searchParams.get("after"), "after", 0, Number.MAX_SAFE_INTEGER, 0);
-    const wait = parseBoundedInteger(url.searchParams.get("wait"), "wait", 0, 20, 0);
+    const wait = parseBoundedInteger(url.searchParams.get("wait"), "wait", 0, MAX_LONG_POLL_SECONDS, 0);
     const deadline = Date.now() + wait * 1000;
     let messages = this.messagesAfter(after);
-    while (messages.length === 0 && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
-      const meta = this.requireMeta();
-      if (meta.expires_at <= Date.now()) {
-        await this.state.storage.deleteAll();
-        throw new HttpError(410, "room_gone", "Room no longer exists");
-      }
-      messages = this.messagesAfter(after);
+    if (messages.length > 0 || wait === 0) return json({ messages });
+    if (this.activeLongPolls >= MAX_CONCURRENT_LONG_POLLS) {
+      throw new HttpError(429, "too_many_waiters", "Too many active room checks", { "retry-after": "1" });
     }
-    return json({ messages });
+    this.activeLongPolls += 1;
+    try {
+      while (messages.length === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(500, deadline - Date.now())));
+        const meta = this.requireMeta();
+        if (meta.expires_at <= Date.now()) {
+          await this.state.storage.deleteAll();
+          throw new HttpError(410, "room_gone", "Room no longer exists");
+        }
+        messages = this.messagesAfter(after);
+      }
+      return json({ messages });
+    } finally {
+      this.activeLongPolls -= 1;
+    }
   }
 
   private async addMessage(request: Request, meta: MetaRow, roleValue: string | null): Promise<Response> {
     const role = this.requireParticipant(roleValue);
     if (meta.state !== "open") throw new HttpError(409, "room_finalized", "Room is finalized");
-    const body = await readJson(request);
+    if (this.messageCount() >= MAX_MESSAGES_PER_ROOM) {
+      throw new HttpError(413, "room_message_count_exceeded", "Room message count limit exceeded");
+    }
+    const body = await readJson(request, MAX_MESSAGE_BYTES + 4096);
+    assertFields(body, ["text"]);
     const text = requiredString(body.text, "text", MAX_MESSAGE_BYTES);
     const textBytes = new TextEncoder().encode(text).byteLength;
     this.requireCurrentOpenRoom();
+    if (this.messageCount() >= MAX_MESSAGES_PER_ROOM) {
+      throw new HttpError(413, "room_message_count_exceeded", "Room message count limit exceeded");
+    }
     const currentBytes = this.messageBytes();
     if (currentBytes + textBytes > MAX_TOTAL_MESSAGE_BYTES) {
       throw new HttpError(413, "room_message_budget_exceeded", "Cumulative room message budget exceeded");
@@ -164,7 +187,8 @@ export class Room implements DurableObject {
   private async submitFinal(request: Request, meta: MetaRow, role: string | null): Promise<Response> {
     this.requireRole(role, "creator");
     if (meta.state !== "open") throw new HttpError(409, "room_finalized", "Room is already finalized");
-    const body = await readJson(request);
+    const body = await readJson(request, MAX_FINAL_BYTES + 4096);
+    assertFields(body, ["markdown"]);
     const markdown = requiredString(body.markdown, "markdown", MAX_FINAL_BYTES);
     const sha256 = await digest(markdown);
     this.requireCurrentOpenRoom();
@@ -185,7 +209,8 @@ export class Room implements DurableObject {
     if (meta.state !== "finalized" || meta.final_sha256 === null) {
       throw new HttpError(409, "final_not_ready", "Final result is not ready");
     }
-    const body = await readJson(request);
+    const body = await readJson(request, 4096);
+    assertFields(body, ["sha256"]);
     const sha256 = requiredString(body.sha256, "sha256", 64);
     const current = this.requireMeta();
     if (current.expires_at <= Date.now()) {
@@ -238,10 +263,20 @@ export class Room implements DurableObject {
   }
 
   private messagesAfter(after: number): RoomMessage[] {
-    return [...this.sql.exec<MessageRow>(
-      "SELECT number, role, text, created_at FROM messages WHERE number > ? ORDER BY number ASC",
+    const rows = [...this.sql.exec<MessageRow>(
+      "SELECT number, role, text, created_at FROM messages WHERE number > ? ORDER BY number ASC LIMIT ?",
       after,
-    )].map(mapMessage);
+      MAX_MESSAGES_PER_RESPONSE,
+    )];
+    const messages: RoomMessage[] = [];
+    let totalBytes = 0;
+    for (const row of rows) {
+      const textBytes = new TextEncoder().encode(row.text).byteLength;
+      if (messages.length > 0 && totalBytes + textBytes > MAX_MESSAGE_RESPONSE_BYTES) break;
+      messages.push(mapMessage(row));
+      totalBytes += textBytes;
+    }
+    return messages;
   }
 
   private requireParticipant(role: string | null): ParticipantRole {
@@ -271,6 +306,12 @@ function parseBoundedInteger(value: string | null, name: string, minimum: number
     throw new HttpError(400, "invalid_request", `${name} is outside the allowed range`);
   }
   return parsed;
+}
+
+function assertFields(body: Record<string, unknown>, allowedFields: string[]): void {
+  const allowed = new Set(allowedFields);
+  const unexpected = Object.keys(body).find((field) => !allowed.has(field));
+  if (unexpected) throw new HttpError(400, "invalid_request", `Unexpected field: ${unexpected}`);
 }
 
 async function digest(value: string): Promise<string> {

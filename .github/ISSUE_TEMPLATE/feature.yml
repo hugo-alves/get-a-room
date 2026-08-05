@@ -1,0 +1,31 @@
+name: Feature proposal
+description: Propose one real workflow before implementation.
+title: "[Proposal]: "
+labels: [proposal]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Real workflow
+      description: Who is trying to do what, with which two agents or environments?
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current limitation
+    validations:
+      required: true
+  - type: textarea
+    id: smallest
+    attributes:
+      label: Smallest useful change
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Boundary impact
+      description: Does this change roles, retention, privacy, API compatibility, model hosting, or the two-agent limit?
+    validations:
+      required: true

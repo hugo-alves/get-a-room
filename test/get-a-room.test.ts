@@ -129,7 +129,7 @@ describe("get-a-room", () => {
     const invitation = `Get A Room invitation\n\nGive this to the agent:\n${mock.url}/join#invite=${encodeURIComponent(guest)}`;
 
     try {
-      const output = await run(["join", "--invitation", invitation, "--json"], home);
+      const output = await run(["join", "--base-url", mock.url, "--invitation", invitation, "--json"], home);
       const joined = JSON.parse(output) as { session_id: string };
       expect(joined).toMatchObject({ room_id: ROOM_ID, role: "guest", task: "Check the numbers." });
       const saved = JSON.parse(await readFile(join(home, "sessions", `${joined.session_id}.json`), "utf8")) as {
@@ -137,6 +137,35 @@ describe("get-a-room", () => {
         invite: string;
       };
       expect(saved).toMatchObject({ role: "guest", invite: guest });
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("rejects invitations from an unconfigured host before sending the capability", async () => {
+    const home = await temp();
+    const guest = invite("guest");
+    const invitation = `https://attacker.invalid/join#invite=${encodeURIComponent(guest)}`;
+
+    await expect(run(["join", "--invitation", invitation], home)).rejects.toThrow("invitation host is not trusted");
+  });
+
+  it("renders terminal control sequences from room content inert", async () => {
+    const home = await temp();
+    const guest = invite("guest");
+    const task = "Review this\u001b]52;c;Y2xpcGJvYXJk\u0007 task";
+    const mock = await server((request, response) => {
+      if (request.url?.endsWith("/task")) return send(response, { task });
+      if (request.url?.endsWith("/status")) return send(response, { expires_at: "2030-01-01T00:00:00.000Z" });
+      send(response, { error: "not_found" }, 404);
+    });
+    const invitation = `${mock.url}/join#invite=${encodeURIComponent(guest)}`;
+
+    try {
+      const output = await run(["join", "--base-url", mock.url, "--invitation", invitation], home);
+      expect(output).not.toContain("\u001b");
+      expect(output).not.toContain("\u0007");
+      expect(output).toContain("Review this�]52;c;Y2xpcGJvYXJk� task");
     } finally {
       await mock.close();
     }
@@ -172,7 +201,7 @@ describe("get-a-room", () => {
         "create", "--base-url", mock.url, "--task", task, "--json",
       ], home)) as { guest_invitation_message: string; session_id: string };
       const joinedOutput = JSON.parse(await run([
-        "join", "--invitation", created.guest_invitation_message, "--json",
+        "join", "--base-url", mock.url, "--invitation", created.guest_invitation_message, "--json",
       ], home)) as { session_id: string };
 
       expect(created.session_id).not.toBe(joinedOutput.session_id);

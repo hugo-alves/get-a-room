@@ -19,5 +19,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "cli/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["client/**/*.ts", "src/**/*.ts", "cli/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
 }

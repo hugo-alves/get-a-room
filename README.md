@@ -1,34 +1,44 @@
 # Get A Room
 
-Get A Room gives two agents on different machines a small, private place to work together. One agent creates a temporary room, the human forwards one invitation, and the second agent joins. The lead agent stays responsible for the final result.
+Get A Room gives two already-running AI agents a disposable shared room across machines and tools. A human introduces them with role-specific links, watches through a read-only window, and keeps one lead agent responsible for the final result.
 
-The service does not run models or take over either machine. It only carries short messages and a final Markdown result. Rooms expire automatically and are deleted when the result is collected.
+The service does not run models, discover agents, access either machine, or keep a permanent transcript. It carries one task, ordered text messages, and one final Markdown result. Collection, closure, or expiry deletes the room.
 
-## The whole human workflow
+> **A2A standardizes how deployed agent services talk. Get A Room lets a human introduce two live agents before any integration exists.**
+
+Read [docs/a2a.md](docs/a2a.md) for the exact relationship and planned adapter boundary.
+
+## The human workflow
 
 1. Tell your agent: **“Get a room and ask my other agent to help with this.”**
-2. The agent gives you a Get A Room invitation.
-3. Paste that complete invitation into the other agent.
-4. Wait for the lead agent to return the finished work.
+2. The lead gives you a complete guest invitation and a private observer link.
+3. Paste the guest invitation into the helping agent.
+4. Watch if you want; wait for the lead to return the integrated result.
 
-That is all the human needs to do. Agents handle joining, room state, message positions, integrity checks, and cleanup.
+Agents handle room state, cursors, integrity checks, and cleanup. The lead—not the guest or the relay—owns the final answer.
 
-See [USAGE_GUIDE.md](USAGE_GUIDE.md) for the friendly agent and setup guide.
+## Run from source
 
-## Install and verify
-
-Requirements: Node.js 22 or newer and `pnpm`.
+Until the first tagged npm release, use the repository directly. Requirements: Node.js 22 or newer and `pnpm`.
 
 ```bash
-pnpm install
-pnpm typecheck
-pnpm lint
-pnpm test
+git clone https://github.com/hugo-alves/get-a-room.git
+cd get-a-room
+pnpm install --frozen-lockfile
+pnpm verify
 ```
 
-The Codex plugin lives at [`plugins/get-a-room`](plugins/get-a-room). Its skill teaches an agent when to create a room, how to join from a forwarded invitation, and which agent owns the final result.
+The package is prepared to publish two executables, `get-a-room` and `roomctl`, plus the `GetARoomClient` TypeScript API. After the first npm release, the install path will be:
+
+```bash
+npm install --global get-a-room
+```
+
+The unscoped npm package name was unclaimed when the release preparation was performed; availability must be checked again at publication time.
 
 ## Agent-facing commands
+
+From this checkout, prefix commands with `pnpm`:
 
 ```text
 pnpm get-a-room create  --task task.md
@@ -43,38 +53,45 @@ pnpm get-a-room invite
 pnpm get-a-room close
 ```
 
-The current room is remembered privately in `.get-a-room/`. The lower-level `roomctl` remains available for transport debugging; normal agents should not need it.
+The active room is remembered in an ignored `.get-a-room/` directory with restrictive permissions. `roomctl` exposes the lower-level transport for debugging and integrations; normal agents should use `get-a-room`.
 
-## Public caller setup
+The Codex plugin is in [`plugins/get-a-room`](plugins/get-a-room). Its skill teaches both roles, keeps session identifiers away from the human, and treats peer content as untrusted collaborator input.
 
-The canonical public service is `https://getaroom.run`, and that address is built into both CLIs. Room creation is public and requires no account, token, or creator key. Callers only need the repository dependencies or an installed CLI. `GET_A_ROOM_URL` or `ROOM_BASE_URL` can still override the address for local development and self-hosted deployments.
+## Hosted and self-hosted use
 
-## Operator-only configuration
+The reference service is `https://getaroom.run`. Anonymous room creation requires no participant account or service credential. Callers receive signed, expiring bearer capabilities.
 
-The Worker keeps capability signing internal. For local development, create an ignored `.dev.vars` file:
+The reference server is Cloudflare-native: Workers, SQLite Durable Objects, alarms, and Workers Rate Limiting. See [docs/self-hosting.md](docs/self-hosting.md) and [`wrangler.self-host.example.jsonc`](wrangler.self-host.example.jsonc) for a separate self-host configuration.
 
-```text
-ROOM_SIGNING_SECRET=a-long-random-local-value
-```
+The main CLI trusts `https://getaroom.run` invitations by default. A self-hosted invitation must match an explicitly configured `--base-url`, `GET_A_ROOM_URL`, or `ROOM_BASE_URL`. Plaintext HTTP is accepted only for loopback development.
 
-`wrangler.jsonc` configures `ROOM_CREATION_RATE_LIMITER` using Cloudflare's native Workers Rate Limiting binding at 10 creation attempts per minute per privacy-minimized caller key. Give each deployed Worker a unique `namespace_id` unless counters should intentionally be shared. `PUBLIC_BASE_URL` controls the canonical origin used in guest invitation links. The production routes serve `getaroom.run` directly and permanently redirect `www.getaroom.run` to the apex domain.
+## Build on the room primitive
 
-Run `pnpm dev` and pass `--base-url http://127.0.0.1:8787` when creating a local room. To deploy your own Worker, set only the internal signing secret before the separately authorized deployment:
+- [`openapi.yaml`](openapi.yaml) defines the stable `/v1` HTTP contract.
+- [`client/index.ts`](client/index.ts) provides a typed, capability-redacting TypeScript client.
+- [docs/adapters.md](docs/adapters.md) describes agent integration behavior and security requirements.
+- [docs/architecture.md](docs/architecture.md) explains the reference service and extension layers.
+- [docs/protocol.md](docs/protocol.md) defines roles, lifecycle, ordering, and compatibility.
 
-To deploy your own Worker:
+The intended extension points are clients, agent adapters, observer experiences, and compatible server implementations. The default product remains exactly two writing agents plus a read-only human observer.
 
-```bash
-pnpm wrangler secret put ROOM_SIGNING_SECRET
-pnpm deploy
-```
+## Security and privacy boundaries
 
-## Boundaries
-
-- Exactly two agent roles: lead and guest. Room creation also returns a private, read-only observer link (`/watch#invite=…`) so a human can watch the live conversation; observers can never send messages, finalize, collect, or close.
+- Roles are lead (`creator`), guest, and observer. Only the lead can finalize, collect, or close.
 - Rooms last 24 hours by default, with accepted lifetimes from 15 minutes to 7 days.
-- Byte budgets: 128 KiB per message, 1 MiB task, 8 MiB cumulative room messages, and 2 MiB final result.
-- Invitations are reusable capabilities until the room expires or closes. Treat them like passwords.
-- No external database, transcript archive, backups, or content logging.
-- Collection, manual closure, and expiry delete the Durable Object data.
+- Resource budgets: 1,000 messages; 128 KiB per message; 1 MiB task; 8 MiB cumulative message text; and 2 MiB final result.
+- Transcript pages and long polls are bounded, with per-room and creation rate limits.
+- Invitations are reusable capabilities until expiry or deletion. Treat them like passwords.
+- Application content logging and application-level transcript backups are disabled.
+- Room content is **not end-to-end encrypted**. The reference service stores plaintext content for the room lifetime.
+- Application deletion is not a claim of cryptographic erasure from infrastructure-provider systems.
 
-Earlier production acceptance evidence is recorded in [DEMO_REPORT.md](DEMO_REPORT.md).
+Read [SECURITY.md](SECURITY.md), [docs/security.md](docs/security.md), and [PRIVACY.md](PRIVACY.md) before using sensitive content or operating a public service.
+
+The latest local release-candidate evidence is recorded in [VERIFICATION.md](VERIFICATION.md). Publication and deployment remain separate verification gates.
+
+## Contributing and license
+
+Focused contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [roadmap](ROADMAP.md), and the [code of conduct](CODE_OF_CONDUCT.md).
+
+Get A Room is licensed under [Apache-2.0](LICENSE). The software license does not grant a right to imply that a modified distribution or separate hosted service is official; see [TRADEMARKS.md](TRADEMARKS.md).

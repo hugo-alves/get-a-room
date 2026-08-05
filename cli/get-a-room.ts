@@ -56,14 +56,14 @@ const VALUE_FLAGS = new Set([
   "out",
 ]);
 
-const HELP = `Get A Room — private collaboration for agents on different machines
+const HELP = `Get A Room — temporary collaboration for agents on different machines
 
 Usage:
   get-a-room create  --task <file> [--ttl 24h]
   get-a-room join    [--invitation <link>]
   get-a-room task
   get-a-room say     --text "..."
-  get-a-room check   [--seconds 20]
+  get-a-room check   [--seconds 5]
   get-a-room status
   get-a-room finish  --file result.md
   get-a-room collect --out final.md
@@ -132,7 +132,14 @@ function baseUrl(flags: Flags): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new CommandError("The Get A Room address must use http or https");
   }
+  if (url.protocol === "http:" && !isLoopbackHost(url.hostname)) {
+    throw new CommandError("The Get A Room address must use HTTPS except for loopback development");
+  }
   return url.toString().replace(/\/$/u, "");
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }
 
 function ttlSeconds(value: string): number {
@@ -195,6 +202,21 @@ function redact(value: string, secrets: string[]): string {
   return output.replace(/\bBearer\s+\S+/giu, "Bearer [REDACTED]");
 }
 
+function safeTerminalText(value: string): string {
+  let output = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    const unsafe =
+      codePoint <= 8 ||
+      (codePoint >= 11 && codePoint <= 31) ||
+      (codePoint >= 127 && codePoint <= 159) ||
+      (codePoint >= 0x202a && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x2069);
+    output += unsafe ? "�" : character;
+  }
+  return output;
+}
+
 function claimsFromInvite(invite: string): { room_id: string; role: string } {
   const payload = invite.split(".")[0];
   if (!payload) throw new CommandError("The invitation is invalid");
@@ -210,7 +232,7 @@ function claimsFromInvite(invite: string): { room_id: string; role: string } {
   }
 }
 
-function parseInvitation(value: string): { base_url: string; invite: string } {
+function parseInvitation(value: string, flags: Flags): { base_url: string; invite: string } {
   const match = /https?:\/\/[^\s<>"']+\/join#invite=[^\s<>"']+/u.exec(value);
   if (!match) throw new CommandError("No Get A Room invitation link was found");
   let url: URL;
@@ -222,7 +244,12 @@ function parseInvitation(value: string): { base_url: string; invite: string } {
   const invite = new URLSearchParams(url.hash.slice(1)).get("invite");
   if (!invite) throw new CommandError("The Get A Room invitation is missing its private capability");
   const basePath = url.pathname.slice(0, -"/join".length).replace(/\/$/u, "");
-  return { base_url: `${url.origin}${basePath}`, invite };
+  const invitationBaseUrl = `${url.origin}${basePath}`;
+  const trustedBaseUrls = new Set([DEFAULT_BASE_URL, baseUrl(flags)]);
+  if (!trustedBaseUrls.has(invitationBaseUrl)) {
+    throw new CommandError("The invitation host is not trusted; configure its exact address with --base-url or GET_A_ROOM_URL");
+  }
+  return { base_url: invitationBaseUrl, invite };
 }
 
 function sessionHome(): string {
@@ -411,9 +438,12 @@ async function invitationInput(flags: Flags): Promise<string> {
 }
 
 async function joinRoom(flags: Flags, json: boolean): Promise<void> {
-  const parsed = parseInvitation(await invitationInput(flags));
+  const parsed = parseInvitation(await invitationInput(flags), flags);
   const claims = claimsFromInvite(parsed.invite);
-  if (claims.role !== "guest") throw new CommandError("This is not a guest invitation");
+  if (claims.role !== "guest" && claims.role !== "creator") {
+    throw new CommandError("This is not a guest or lead invitation");
+  }
+  const role: AgentRole = claims.role === "creator" ? "lead" : "guest";
   const [{ body: taskBody }, { body: statusBody }] = await Promise.all([
     requestJson(roomPath(parsed.base_url, claims.room_id, "task"), { headers: bearer(parsed.invite) }, [parsed.invite]),
     requestJson(roomPath(parsed.base_url, claims.room_id, "status"), { headers: bearer(parsed.invite) }, [parsed.invite]),
@@ -425,18 +455,21 @@ async function joinRoom(flags: Flags, json: boolean): Promise<void> {
     version: 1,
     room_id: claims.room_id,
     base_url: parsed.base_url,
-    role: "guest",
+    role,
     invite: parsed.invite,
-    creator_invite: null,
+    creator_invite: role === "lead" ? parsed.invite : null,
     guest_invitation: null,
     expires_at: expiresAt,
     last_number: 0,
     state: "open",
   });
+  const leadNote = role === "lead"
+    ? "You are the lead: run the room, integrate the guest's work, and finish/collect the final result."
+    : "";
   print(
     json
-      ? { room_id: claims.room_id, session_id: sessionId, role: "guest", expires_at: expiresAt, task }
-      : `You joined the room as the guest agent.\nLocal session ID (keep internal): ${sessionId}\n\nTask:\n${task}`,
+      ? { room_id: claims.room_id, session_id: sessionId, role, expires_at: expiresAt, task }
+      : `You joined the room as the ${role} agent.\nLocal session ID (keep internal): ${sessionId}\n${leadNote ? `${leadNote}\n` : ""}\nTask:\n${safeTerminalText(task)}`,
     json,
   );
 }
@@ -450,7 +483,7 @@ async function task(flags: Flags, json: boolean): Promise<void> {
   );
   const value = isRecord(body) && typeof body.task === "string" ? body.task : undefined;
   if (value === undefined) throw new CommandError("The room did not provide a readable task");
-  print(json ? { task: value } : value, json);
+  print(json ? { task: value } : safeTerminalText(value), json);
 }
 
 async function say(flags: Flags, json: boolean): Promise<void> {
@@ -471,10 +504,10 @@ async function say(flags: Flags, json: boolean): Promise<void> {
 }
 
 function seconds(flags: Flags): number {
-  const raw = flag(flags, "seconds") ?? "20";
-  if (!/^\d+$/u.test(raw)) throw new CommandError("--seconds must be a number from 0 to 20");
+  const raw = flag(flags, "seconds") ?? "5";
+  if (!/^\d+$/u.test(raw)) throw new CommandError("--seconds must be a number from 0 to 5");
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0 || value > 20) throw new CommandError("--seconds must be a number from 0 to 20");
+  if (!Number.isInteger(value) || value < 0 || value > 5) throw new CommandError("--seconds must be a number from 0 to 5");
   return value;
 }
 
@@ -517,7 +550,7 @@ async function check(flags: Flags, json: boolean): Promise<void> {
     print("No new message yet.", false);
     return;
   }
-  print(found.map((message) => `${message.role === "creator" ? "Lead" : "Guest"}: ${message.text}`).join("\n\n"), false);
+  print(found.map((message) => `${message.role === "creator" ? "Lead" : "Guest"}: ${safeTerminalText(message.text)}`).join("\n\n"), false);
 }
 
 async function status(flags: Flags, json: boolean): Promise<void> {

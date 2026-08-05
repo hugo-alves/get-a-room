@@ -10,7 +10,7 @@ export default defineConfig({
             wrangler: { configPath: "./wrangler.jsonc" },
             miniflare: {
               bindings: {
-                ROOM_SIGNING_SECRET: "test-signing-secret-at-least-32-bytes-long",
+                ROOM_SIGNING_SECRET: "test-signing-secret-at-least-32-bytes-long", // gitleaks:allow
               },
             },
           }),
@@ -24,7 +24,7 @@ export default defineConfig({
         test: {
           name: "cli",
           environment: "node",
-          include: ["test/cli.test.ts", "test/get-a-room.test.ts"],
+          include: ["test/cli.test.ts", "test/get-a-room.test.ts", "test/client.test.ts"],
         },
       },
     ],

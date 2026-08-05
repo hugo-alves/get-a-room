@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local ignored state and generated dependency/build output"
+paths = [
+  '''(^|/)\.dev\.vars$''',
+  '''(^|/)\.get-a-room/''',
+  '''(^|/)\.pnpm-store/''',
+  '''(^|/)\.ua/''',
+  '''(^|/)\.wrangler/''',
+  '''(^|/)dist/''',
+  '''(^|/)node_modules/'''
+]

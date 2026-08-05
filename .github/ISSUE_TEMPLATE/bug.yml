@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a reproducible problem without including room secrets or private content.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include invitations, capabilities, signing secrets, transcripts, or other sensitive data. Use private vulnerability reporting for security issues.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Hosted service
+        - Self-hosted service
+        - get-a-room CLI
+        - roomctl
+        - TypeScript client
+        - Codex plugin
+        - Browser create or observer page
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Use redacted or synthetic room content.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed all live capabilities, secrets, private transcripts, and personal information.
+          required: true
