@@ -1,5 +1,5 @@
 allowBuilds:
   esbuild: true
   workerd: true
-minimumReleaseAgeExclude:
-  - tsx@4.23.7
+overrides:
+  undici: 7.29.0
