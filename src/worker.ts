@@ -1,4 +1,5 @@
 import { bearerToken, createInvite, inspectInvite } from "./auth";
+import { faviconImage, landingPage, roomPlanImage } from "./landing";
 import { Room } from "./room";
 import {
   CREATION_RATE_LIMIT_WINDOW_SECONDS,
@@ -7,6 +8,7 @@ import {
   MAX_TASK_BYTES,
   MAX_TTL_SECONDS,
   MIN_TTL_SECONDS,
+  ROOM_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
   errorResponse,
   json,
   readJson,
@@ -33,6 +35,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     url.hostname = "getaroom.run";
     return Response.redirect(url.toString(), 308);
   }
+  if (request.method === "GET" && url.pathname === "/healthz") return json({ ok: true, service: "get-a-room" });
+  if (request.method === "GET" && url.pathname === "/") return landingPage();
+  if (request.method === "GET" && (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico")) return faviconImage();
+  if (request.method === "GET" && url.pathname === "/room-plan.svg") return roomPlanImage();
   if (request.method === "GET" && url.pathname === "/join") return joinPage();
   if (request.method === "GET" && url.pathname === "/watch") return watchPage();
   if (request.method === "GET" && url.pathname === "/new") return newRoomPage();
@@ -46,12 +52,11 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   const verified = await inspectInvite(env.ROOM_SIGNING_SECRET, bearerToken(request), roomId);
   const claims = verified.claims;
-  const stub = env.ROOMS.get(env.ROOMS.idFromName(roomId));
   if (verified.expired) {
-    const probe = await stub.fetch("https://room.internal/status", { headers: { "x-room-role": claims.role } });
-    if (probe.status === 410) return probe;
     throw new HttpError(401, "expired_invite", "Invite has expired");
   }
+  await enforceRoomRequestLimit(roomId, env);
+  const stub = env.ROOMS.get(env.ROOMS.idFromName(roomId));
   const allowed =
     (request.method === "GET" && ["status", "task", "messages", "final"].includes(action)) ||
     (request.method === "POST" && ["messages", "final", "collect"].includes(action)) ||
@@ -96,6 +101,147 @@ function joinPage(): Response {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+    },
+  });
+}
+
+function newRoomPage(): Response {
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Get A Room — Start a room</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.55 system-ui, sans-serif; background: #f4f1ea; color: #191713; }
+    body { margin: 0 auto; max-width: 44rem; padding: 2rem 1.5rem 4rem; }
+    h1 { font-size: 2rem; letter-spacing: -.04em; margin: 0; }
+    .sub { color: #6b6459; margin: .25rem 0 1.5rem; }
+    .panel { background: #fff; border: 1px solid #e2ddd2; border-radius: .5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    label { display: block; font-weight: 600; margin-bottom: .35rem; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 8rem; font: inherit; padding: .6rem; border: 1px solid #d5cfc2; border-radius: .35rem; background: #fdfcf9; }
+    select { font: inherit; padding: .35rem; margin-top: .5rem; }
+    button { font: inherit; font-weight: 600; background: #eb5e28; color: #fff; border: 0; border-radius: .35rem; padding: .6rem 1.1rem; cursor: pointer; margin-top: 1rem; }
+    button:disabled { opacity: .5; cursor: default; }
+    button.copy { background: #191713; margin-top: .5rem; padding: .35rem .8rem; font-size: .85rem; }
+    .who { font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    .lead-card { border-left: 4px solid #eb5e28; }
+    .guest-card { border-left: 4px solid #2a6f97; }
+    .watch-card { border-left: 4px solid #6b6459; }
+    pre { white-space: pre-wrap; word-break: break-all; font: .8rem/1.5 ui-monospace, monospace; background: #fdfcf9; border: 1px solid #eee8db; border-radius: .35rem; padding: .6rem; margin: .5rem 0 0; }
+    .note { color: #6b6459; }
+    .error { color: #a33; font-weight: 600; }
+    .warn { border-left: 4px solid #eb5e28; padding-left: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Start a room</h1>
+  <p class="sub">A temporary, capability-protected room for two agents, with a window for you.</p>
+  <div class="panel" id="form-panel">
+    <label for="task">What should they work on?</label>
+    <textarea id="task" placeholder="Describe the task for the two agents. You can leave this empty and let the lead agent explain it in the room."></textarea>
+    <label for="ttl" style="margin-top:1rem">How long does the room last?</label>
+    <select id="ttl">
+      <option value="3600">1 hour</option>
+      <option value="86400" selected>24 hours</option>
+      <option value="604800">7 days</option>
+    </select>
+    <div><button id="create" type="button">Start the room</button></div>
+    <p class="error" id="error" hidden></p>
+  </div>
+  <div id="result" hidden>
+    <p class="warn"><strong>These three links are the keys to the room.</strong> Anyone with a link gets its powers. Treat them like passwords and share each one only with its intended reader.</p>
+    <div class="panel lead-card">
+      <span class="who">1 · Your agent — the lead</span>
+      <p class="note">Paste this into the agent that should run the room and deliver the final result.</p>
+      <pre id="lead-text"></pre>
+      <button class="copy" type="button" data-copy="lead-text">Copy</button>
+    </div>
+    <div class="panel guest-card">
+      <span class="who">2 · The other agent — the guest</span>
+      <p class="note">Paste this into the helping agent. It can talk, but cannot finalize or close the room.</p>
+      <pre id="guest-text"></pre>
+      <button class="copy" type="button" data-copy="guest-text">Copy</button>
+    </div>
+    <div class="panel watch-card">
+      <span class="who">3 · You — the window</span>
+      <p class="note">Your private read-only live view. <a id="watch-link" href="#">Open the watch page</a> and keep it open.</p>
+      <pre id="watch-text"></pre>
+      <button class="copy" type="button" data-copy="watch-text">Copy</button>
+    </div>
+    <p class="note" id="expiry"></p>
+  </div>
+  <script>
+  (function () {
+    "use strict";
+    function el(id) { return document.getElementById(id); }
+    var createButton = el("create"), errorEl = el("error");
+
+    function fail(message) {
+      errorEl.textContent = message;
+      errorEl.hidden = false;
+      createButton.disabled = false;
+    }
+
+    createButton.addEventListener("click", async function () {
+      createButton.disabled = true;
+      errorEl.hidden = true;
+      var ttl = parseInt(el("ttl").value, 10);
+      var response;
+      try {
+        response = await fetch("/v1/rooms", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ task: el("task").value, ttl_seconds: ttl }),
+        });
+      } catch (error) {
+        return fail("Could not reach the room service. Check your connection and try again.");
+      }
+      if (response.status === 429) return fail("Too many new rooms from your network right now. Wait a minute and try again.");
+      if (response.status === 413) return fail("That task is too large. Keep it under 1 MB.");
+      if (!response.ok) return fail("The room could not be created (HTTP " + response.status + "). Try again.");
+      var room;
+      try {
+        room = await response.json();
+      } catch (error) {
+        return fail("The room service returned an unreadable response.");
+      }
+      if (!room || typeof room.lead_invitation_message !== "string" || typeof room.guest_invitation_message !== "string" || typeof room.observer_url !== "string") {
+        return fail("The room service response was missing invitation links.");
+      }
+      el("lead-text").textContent = room.lead_invitation_message;
+      el("guest-text").textContent = room.guest_invitation_message;
+      el("watch-text").textContent = room.observer_url;
+      el("watch-link").setAttribute("href", room.observer_url);
+      el("expiry").textContent = "The room and all three links expire at " + new Date(room.expires_at).toLocaleString() + ". The room is deleted when the result is collected, when it is closed, or when it expires.";
+      el("form-panel").hidden = true;
+      el("result").hidden = false;
+    });
+
+    document.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!(target instanceof HTMLElement) || !target.dataset.copy) return;
+      var text = el(target.dataset.copy).textContent || "";
+      navigator.clipboard.writeText(text).then(function () {
+        target.textContent = "Copied";
+        setTimeout(function () { target.textContent = "Copy"; }, 1500);
+      }, function () {
+        target.textContent = "Select and copy manually";
+      });
+    });
+  })();
+  </script>
+</body>
+</html>`;
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "content-security-policy":
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
       "x-frame-options": "DENY",
@@ -269,7 +415,7 @@ function watchPage(): Response {
 
 async function createRoom(request: Request, env: Env): Promise<Response> {
   rejectOversizedCreationBody(request);
-  const body = await readJson(request);
+  const body = await readJson(request, MAX_TASK_BYTES + 4096);
   assertCreationFields(body);
   const task = requiredString(body.task, "task", MAX_TASK_BYTES, { allowEmpty: true });
   const ttlSecondsValue = body.ttl_seconds ?? body.ttl ?? DEFAULT_TTL_SECONDS;
@@ -323,6 +469,15 @@ async function enforceCreationLimit(request: Request, env: Env): Promise<void> {
   if (!result.success) {
     throw new HttpError(429, "creation_rate_limited", "Too many room creation attempts; try again later", {
       "retry-after": String(CREATION_RATE_LIMIT_WINDOW_SECONDS),
+    });
+  }
+}
+
+async function enforceRoomRequestLimit(roomId: string, env: Env): Promise<void> {
+  const result = await env.ROOM_REQUEST_RATE_LIMITER.limit({ key: roomId });
+  if (!result.success) {
+    throw new HttpError(429, "room_rate_limited", "Too many requests to this room", {
+      "retry-after": String(ROOM_REQUEST_RATE_LIMIT_WINDOW_SECONDS),
     });
   }
 }

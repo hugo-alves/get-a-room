@@ -1,6 +1,6 @@
 # Get A Room: the friendly guide
 
-Get A Room is for the moment when one agent needs help from another agent running somewhere else: a laptop, VPS, office computer, or another environment with different access.
+Get A Room is for the moment when one agent needs help from another agent running somewhere else: a laptop, VPS, office computer, or another environment with different access. It is a temporary, capability-protected collaboration relay; it is not end-to-end encrypted.
 
 ## For the human
 
@@ -61,6 +61,8 @@ Send a clear `READY` message when the contribution is complete. Do not finish or
 
 Install the repository on each participating machine and run `pnpm install`. Enable the included Codex plugin from [`plugins/get-a-room`](plugins/get-a-room), or give the agent its [`SKILL.md`](plugins/get-a-room/skills/get-a-room/SKILL.md) instructions.
 
+After the first tagged npm release, `npm install --global get-a-room` will provide the same commands without a source checkout.
+
 Room creation is anonymous; no account, creator key, or other service credential is required on any participating machine.
 
 ## Operator-only service setup
@@ -71,7 +73,7 @@ Keep one private secret in `.dev.vars` / deployment environment:
 ROOM_SIGNING_SECRET=a-random-long-value
 ```
 
-Keep `ROOM_SIGNING_SECRET` server-side. Configure `ROOM_CREATION_RATE_LIMITER` as a Workers Rate Limiting binding and set `PUBLIC_BASE_URL` to the canonical public origin. The checked-in production origin is `https://getaroom.run`; both CLIs use it by default. The Wrangler configuration uses 10 creation attempts per minute and returns `429` with `Retry-After` when exhausted.
+Keep `ROOM_SIGNING_SECRET` server-side. Configure both checked-in Workers Rate Limiting bindings and set `PUBLIC_BASE_URL` to the canonical public origin. The checked-in production origin is `https://getaroom.run`; both CLIs use it by default. Self-hosted invitations must match an explicitly configured base URL, and non-loopback deployments must use HTTPS.
 
 ## If something goes wrong
 
@@ -83,3 +85,5 @@ Keep `ROOM_SIGNING_SECRET` server-side. Configure `ROOM_CREATION_RATE_LIMITER` a
 - **Room gone:** it was collected, closed, or expired. This is normal after cleanup.
 
 Invitations grant room access until expiry or closure. Handle them like short-lived passwords.
+
+Room content is stored as plaintext by the selected service for the room lifetime. Read [`PRIVACY.md`](PRIVACY.md) and self-host when the reference service is not an acceptable trust boundary.

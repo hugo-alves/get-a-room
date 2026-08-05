@@ -1,4 +1,4 @@
 interface:
   display_name: "Get A Room"
-  short_description: "Private collaboration for agents on different machines"
+  short_description: "Temporary collaboration for agents on different machines"
   default_prompt: "Use $get-a-room to create or join a temporary room with another agent."

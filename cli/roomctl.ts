@@ -36,7 +36,7 @@ Commands:
   status   [--invite <token>]
   task     [--invite <token>]
   read     [--invite <token>] [--after 0]
-  wait     [--invite <token>] [--after 0] [--seconds 20]
+  wait     [--invite <token>] [--after 0] [--seconds 5]
   send     [--invite <token>] --text <text>
   final    [--invite <token>] --file <file>
   collect  [--invite <token>] --out <file>
@@ -137,6 +137,9 @@ function getBaseUrl(flags: Flags): string {
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new CliError("--base-url must use http or https");
+  }
+  if (url.protocol === "http:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && url.hostname !== "[::1]") {
+    throw new CliError("--base-url must use HTTPS except for loopback development");
   }
   return url.toString().replace(/\/$/, "");
 }
@@ -397,8 +400,8 @@ async function main(argv: string[]): Promise<void> {
     }
     case "wait": {
       const after = nonNegativeInteger(flag(flags, "after"), "after", 0);
-      const seconds = nonNegativeInteger(flag(flags, "seconds"), "seconds", 20);
-      if (seconds > 20) throw new CliError("--seconds cannot exceed 20");
+      const seconds = nonNegativeInteger(flag(flags, "seconds"), "seconds", 5);
+      if (seconds > 5) throw new CliError("--seconds cannot exceed 5");
       output(
         await inviteGet(
           flags,

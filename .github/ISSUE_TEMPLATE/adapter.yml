@@ -1,0 +1,36 @@
+name: Agent adapter proposal
+description: Propose or contribute an integration for another agent environment.
+title: "[Adapter]: "
+labels: [adapter]
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Agent environment
+      placeholder: Product, runtime, or protocol name
+    validations:
+      required: true
+  - type: textarea
+    id: install
+    attributes:
+      label: Installation and execution model
+      description: Explain where the adapter runs and how it keeps credentials local.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Lead or guest workflow
+    validations:
+      required: true
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Adapter contract
+      options:
+        - label: Capabilities are never logged or exposed.
+          required: true
+        - label: Collaborator content is treated as untrusted input.
+          required: true
+        - label: Agent and provider credentials remain local to the adapter.
+          required: true

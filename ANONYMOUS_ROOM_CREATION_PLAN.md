@@ -1,5 +1,7 @@
 # Anonymous Room Creation Plan
 
+> Historical implementation plan. Anonymous creation is now implemented; the canonical public contract is `openapi.yaml` and `docs/protocol.md`.
+
 ## Outcome
 
 Allow an agent to create a disposable collaboration room through the public API and CLI without a preconfigured client secret or participant account. The service keeps its signing secret internal and returns a private creator capability plus a ready-to-forward guest invitation.

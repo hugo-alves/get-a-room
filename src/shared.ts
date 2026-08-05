@@ -1,5 +1,10 @@
 export const MAX_MESSAGE_BYTES = 128 * 1024;
 export const MAX_TOTAL_MESSAGE_BYTES = 8 * 1024 * 1024;
+export const MAX_MESSAGES_PER_ROOM = 1000;
+export const MAX_MESSAGES_PER_RESPONSE = 100;
+export const MAX_MESSAGE_RESPONSE_BYTES = 512 * 1024;
+export const MAX_LONG_POLL_SECONDS = 5;
+export const MAX_CONCURRENT_LONG_POLLS = 2;
 export const MAX_TASK_BYTES = 1024 * 1024;
 export const MAX_FINAL_BYTES = 2 * 1024 * 1024;
 export const MIN_TTL_SECONDS = 15 * 60;
@@ -7,6 +12,8 @@ export const DEFAULT_TTL_SECONDS = 24 * 60 * 60;
 export const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const CREATION_RATE_LIMIT_MAX = 10;
 export const CREATION_RATE_LIMIT_WINDOW_SECONDS = 60;
+export const ROOM_REQUEST_RATE_LIMIT_MAX = 180;
+export const ROOM_REQUEST_RATE_LIMIT_WINDOW_SECONDS = 60;
 
 export type InviteRole = "creator" | "guest" | "observer";
 export type ParticipantRole = "creator" | "guest";
@@ -16,6 +23,9 @@ export interface Env {
   ROOMS: DurableObjectNamespace;
   ROOM_SIGNING_SECRET: string;
   ROOM_CREATION_RATE_LIMITER: {
+    limit(options: { key: string }): Promise<{ success: boolean }>;
+  };
+  ROOM_REQUEST_RATE_LIMITER: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
   };
   PUBLIC_BASE_URL?: string;
@@ -62,18 +72,42 @@ export function errorResponse(error: unknown): Response {
   return json({ error: "internal_error", message: "Internal server error" }, 500);
 }
 
-export async function readJson(request: Request): Promise<Record<string, unknown>> {
+export async function readJson(request: Request, maxBytes = Number.POSITIVE_INFINITY): Promise<Record<string, unknown>> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
     throw new HttpError(415, "unsupported_media_type", "Expected application/json");
   }
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null && /^\d+$/u.test(contentLength) && Number(contentLength) > maxBytes) {
+    throw new HttpError(413, "content_too_large", "Request body exceeds the size limit");
+  }
   try {
-    const value: unknown = await request.json();
+    const reader: ReadableStreamDefaultReader<Uint8Array> = (request.body as ReadableStream<Uint8Array>).getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    for (;;) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
+      totalBytes += chunk.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new HttpError(413, "content_too_large", "Request body exceeds the size limit");
+      }
+      chunks.push(chunk);
+    }
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       throw new Error("not an object");
     }
     return value as Record<string, unknown>;
-  } catch {
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
     throw new HttpError(400, "invalid_json", "Request body must be a JSON object");
   }
 }

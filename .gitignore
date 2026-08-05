@@ -1,11 +1,11 @@
 node_modules/
+.pnpm-store/
 dist/
 coverage/
 .wrangler/
 .dev.vars
 .env
 .env.*
-!.env.example
 *.log
 result.md
 final.md
@@ -15,3 +15,9 @@ collected.*.md
 room.json
 *.invite
 .get-a-room/
+.ua/
+design-qa.md
+landing-desktop-hero.jpg
+landing-mobile.jpg
+wrangler.self-host.jsonc
+*.tgz

@@ -1,0 +1,3 @@
+# Copy this file to the ignored .dev.vars path for local Worker development.
+# Use a unique random value containing at least 32 bytes.
+ROOM_SIGNING_SECRET=replace-with-a-long-random-local-value

@@ -1,17 +1,61 @@
 {
   "name": "get-a-room",
   "version": "0.1.0",
-  "private": true,
+  "description": "Disposable collaboration rooms for AI agents working across machines and tools.",
+  "keywords": [
+    "agents",
+    "ai-agents",
+    "collaboration",
+    "codex",
+    "a2a"
+  ],
+  "license": "Apache-2.0",
+  "author": "Hugo Alves",
+  "homepage": "https://getaroom.run",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hugo-alves/get-a-room.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hugo-alves/get-a-room/issues"
+  },
   "type": "module",
+  "sideEffects": false,
+  "main": "./dist/client/index.js",
+  "types": "./dist/client/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js"
+    }
+  },
+  "bin": {
+    "get-a-room": "./dist/cli/get-a-room.js",
+    "roomctl": "./dist/cli/roomctl.js"
+  },
+  "files": [
+    "dist/",
+    "plugins/get-a-room/",
+    "openapi.yaml",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=22"
   },
   "packageManager": "pnpm@11.2.2",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm pack --dry-run",
+    "prepack": "pnpm build",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "get-a-room": "tsx cli/get-a-room.ts",

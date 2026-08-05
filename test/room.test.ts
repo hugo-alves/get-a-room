@@ -7,13 +7,14 @@ import {
   CREATION_RATE_LIMIT_MAX,
   MAX_FINAL_BYTES,
   MAX_MESSAGE_BYTES,
+  MAX_MESSAGES_PER_RESPONSE,
   MAX_TASK_BYTES,
   MAX_TOTAL_MESSAGE_BYTES,
   type Env,
 } from "../src/shared";
 
 const ORIGIN = "https://room.test";
-const SIGNING_SECRET = "test-signing-secret-at-least-32-bytes-long";
+const SIGNING_SECRET = "test-signing-secret-at-least-32-bytes-long"; // gitleaks:allow
 
 interface CreatedRoom {
   room_id: string;
@@ -21,6 +22,8 @@ interface CreatedRoom {
   creator_capability: string;
   guest_invitation_url: string;
   guest_invitation_message: string;
+  lead_invitation_url: string;
+  lead_invitation_message: string;
   observer_url: string;
   observer_message: string;
 }
@@ -66,6 +69,13 @@ function authenticated(invite: string, method = "GET", body?: unknown): RequestI
 }
 
 describe("temporary agent room", () => {
+  it("serves a minimal health endpoint", async () => {
+    const response = await workerFetch("/healthz");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual({ ok: true, service: "get-a-room" });
+  });
+
   it("serves a safe branded join page without accepting invitation data", async () => {
     const response = await workerFetch("/join");
     expect(response.status).toBe(200);
@@ -146,6 +156,28 @@ describe("temporary agent room", () => {
     ]);
   });
 
+  it("paginates transcript reads so one request cannot return the whole room", async () => {
+    const room = await createRoom();
+    for (let index = 0; index < MAX_MESSAGES_PER_RESPONSE + 5; index += 1) {
+      const response = await workerFetch(
+        `/v1/rooms/${room.room_id}/messages`,
+        authenticated(room.creator_capability, "POST", { text: `message ${index + 1}` }),
+      );
+      expect(response.status).toBe(201);
+    }
+
+    const first = await workerFetch(`/v1/rooms/${room.room_id}/messages?after=0`, authenticated(room.creator_capability));
+    const firstBody = await first.json<MessageList>();
+    expect(firstBody.messages).toHaveLength(MAX_MESSAGES_PER_RESPONSE);
+
+    const second = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages?after=${firstBody.messages.at(-1)!.number}`,
+      authenticated(room.creator_capability),
+    );
+    const secondBody = await second.json<MessageList>();
+    expect(secondBody.messages).toHaveLength(5);
+  });
+
   it("enforces per-message, cumulative UTF-8, and final-result byte limits", async () => {
     const room = await createRoom();
     const oversizedMessage = await workerFetch(
@@ -153,6 +185,19 @@ describe("temporary agent room", () => {
       authenticated(room.creator_capability, "POST", { text: "x".repeat(MAX_MESSAGE_BYTES + 1) }),
     );
     expect(oversizedMessage.status).toBe(413);
+
+    const oversizedEnvelope = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(room.creator_capability, "POST", { text: "small", padding: "x".repeat(MAX_MESSAGE_BYTES + 4096) }),
+    );
+    expect(oversizedEnvelope.status).toBe(413);
+
+    const unexpectedField = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(room.creator_capability, "POST", { text: "small", metadata: "not accepted" }),
+    );
+    expect(unexpectedField.status).toBe(400);
+    await expect(unexpectedField.json()).resolves.toMatchObject({ error: "invalid_request" });
 
     const chunk = "x".repeat(MAX_MESSAGE_BYTES);
     const chunkCount = MAX_TOTAL_MESSAGE_BYTES / MAX_MESSAGE_BYTES;
@@ -189,6 +234,52 @@ describe("temporary agent room", () => {
     expect(final.status).toBe(403);
     const close = await workerFetch(`/v1/rooms/${room.room_id}`, authenticated(guest, "DELETE"));
     expect(close.status).toBe(403);
+  });
+
+  it("serves a safe browser page for starting a room", async () => {
+    const response = await workerFetch("/new");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    const csp = response.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("connect-src 'self'");
+    await expect(response.text()).resolves.toContain("Start the room");
+  });
+
+  it("serves the landing page and its room-plan image", async () => {
+    const page = await workerFetch("/");
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toContain("text/html");
+    expect(page.headers.get("content-security-policy")).toContain("default-src 'none'");
+    const html = await page.text();
+    expect(html).toContain("A room is");
+    expect(html).toContain('href="/new"');
+    expect(html).toContain('href="/favicon.svg"');
+    expect(html).not.toContain("Direction B");
+
+    const favicon = await workerFetch("/favicon.svg");
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get("content-type")).toContain("image/svg+xml");
+
+    const plan = await workerFetch("/room-plan.svg");
+    expect(plan.status).toBe(200);
+    expect(plan.headers.get("content-type")).toContain("image/svg+xml");
+    await expect(plan.text()).resolves.toContain("PRIVATE LEAD DOOR");
+  });
+
+  it("returns a lead invitation wrapping the creator capability for browser-created rooms", async () => {
+    const room = await createRoom();
+    expect(room.lead_invitation_url).toMatch(/^https:\/\/getaroom\.run\/join#invite=/);
+    expect(inviteFromUrl(room.lead_invitation_url)).toBe(room.creator_capability);
+    expect(room.lead_invitation_message).toContain(room.lead_invitation_url);
+    expect(room.lead_invitation_message).not.toContain(inviteFromUrl(room.guest_invitation_url));
+
+    const status = await workerFetch(
+      `/v1/rooms/${room.room_id}/status`,
+      authenticated(inviteFromUrl(room.lead_invitation_url)),
+    );
+    expect(status.status).toBe(200);
   });
 
   it("serves a safe watch page for human observers", async () => {
@@ -345,6 +436,7 @@ describe("temporary agent room", () => {
       Math.floor(now / 1000) - 60,
     );
     const publicAfterAlarm = await workerFetch(`/v1/rooms/${roomId}/status`, authenticated(expiredInvite));
-    expect(publicAfterAlarm.status).toBe(410);
+    expect(publicAfterAlarm.status).toBe(401);
+    await expect(publicAfterAlarm.json()).resolves.toMatchObject({ error: "expired_invite" });
   });
 });

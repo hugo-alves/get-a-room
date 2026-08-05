@@ -1,0 +1,557 @@
+openapi: 3.1.0
+info:
+  title: Get A Room API
+  version: 1.0.0
+  description: >-
+    A small HTTP API for temporary collaboration rooms with lead, guest, and
+    observer capabilities. Capability values are bearer secrets and must never
+    be logged or placed in query strings.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: https://getaroom.run
+    description: Public reference service
+tags:
+  - name: Service
+  - name: Rooms
+paths:
+  /healthz:
+    get:
+      tags: [Service]
+      operationId: health
+      summary: Check whether the service is responding
+      responses:
+        "200":
+          description: Service is responding
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, service]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  service:
+                    type: string
+                    const: get-a-room
+  /v1/rooms:
+    post:
+      tags: [Rooms]
+      operationId: createRoom
+      summary: Create an anonymous temporary room
+      description: >-
+        Creation does not require an account. The response contains three
+        role-specific bearer capabilities. Each value must be handled like a
+        password until the room ends.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [task]
+              properties:
+                task:
+                  type: string
+                  maxLength: 1048576
+                  description: UTF-8 content is limited to 1 MiB; character count is only an approximation.
+                ttl_seconds:
+                  type: integer
+                  minimum: 900
+                  maximum: 604800
+                  default: 86400
+      responses:
+        "201":
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedRoom"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/ContentTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/rooms/{roomId}:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    delete:
+      tags: [Rooms]
+      operationId: closeRoom
+      summary: Close and delete a room
+      description: Requires the lead capability. The operation deletes room storage.
+      security:
+        - roomCapability: []
+      responses:
+        "200":
+          description: Room deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destroyed]
+                properties:
+                  destroyed:
+                    type: boolean
+                    const: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "410":
+          $ref: "#/components/responses/RoomGone"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/rooms/{roomId}/status:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    get:
+      tags: [Rooms]
+      operationId: getRoomStatus
+      summary: Read room state and counters
+      security:
+        - roomCapability: []
+      responses:
+        "200":
+          description: Current room state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          $ref: "#/components/responses/RoomGone"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/rooms/{roomId}/task:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    get:
+      tags: [Rooms]
+      operationId: getRoomTask
+      summary: Read the room task
+      security:
+        - roomCapability: []
+      responses:
+        "200":
+          description: Room task
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [task]
+                properties:
+                  task:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          $ref: "#/components/responses/RoomGone"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/rooms/{roomId}/messages:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    get:
+      tags: [Rooms]
+      operationId: listRoomMessages
+      summary: Read a page of messages after a cursor
+      description: >-
+        Returns at most 100 messages and 512 KiB of message text. A request can
+        wait up to five seconds for new messages. At most two long polls run at
+        once per active room instance.
+      security:
+        - roomCapability: []
+      parameters:
+        - name: after
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Return messages with a number greater than this cursor.
+        - name: wait
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 5
+            default: 0
+          description: Long-poll duration in seconds.
+      responses:
+        "200":
+          description: Ordered page of messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: "#/components/schemas/RoomMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          $ref: "#/components/responses/RoomGone"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Rooms]
+      operationId: sendRoomMessage
+      summary: Add a lead or guest message
+      description: Observers cannot send. A room accepts at most 1,000 messages.
+      security:
+        - roomCapability: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  minLength: 1
+                  description: UTF-8 content is limited to 128 KiB.
+      responses:
+        "201":
+          description: Message added
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    $ref: "#/components/schemas/RoomMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/ContentTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/rooms/{roomId}/final:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    get:
+      tags: [Rooms]
+      operationId: getRoomFinal
+      summary: Read the finalized result
+      description: Available to the lead and observer after finalization.
+      security:
+        - roomCapability: []
+      responses:
+        "200":
+          description: Final Markdown and digest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomFinal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/RoomGone"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Rooms]
+      operationId: finalizeRoom
+      summary: Store the final Markdown result
+      description: Requires the lead capability and transitions the room to finalized.
+      security:
+        - roomCapability: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [markdown]
+              properties:
+                markdown:
+                  type: string
+                  minLength: 1
+                  description: UTF-8 content is limited to 2 MiB.
+      responses:
+        "201":
+          description: Result stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sha256]
+                properties:
+                  sha256:
+                    $ref: "#/components/schemas/Sha256"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/ContentTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/rooms/{roomId}/collect:
+    parameters:
+      - $ref: "#/components/parameters/RoomId"
+    post:
+      tags: [Rooms]
+      operationId: collectRoom
+      summary: Confirm the final digest and delete the room
+      description: >-
+        Requires the lead capability. On a matching SHA-256 digest, the service
+        deletes room storage. Read and save the final result before collecting.
+      security:
+        - roomCapability: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sha256]
+              properties:
+                sha256:
+                  $ref: "#/components/schemas/Sha256"
+      responses:
+        "200":
+          description: Digest confirmed and room deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [collected, sha256]
+                properties:
+                  collected:
+                    type: boolean
+                    const: true
+                  sha256:
+                    $ref: "#/components/schemas/Sha256"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/RoomGone"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+components:
+  securitySchemes:
+    roomCapability:
+      type: http
+      scheme: bearer
+      bearerFormat: signed capability
+      description: Role-specific room capability. Treat it as a password.
+  parameters:
+    RoomId:
+      name: roomId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{32}$"
+  schemas:
+    CreatedRoom:
+      type: object
+      additionalProperties: false
+      required:
+        - room_id
+        - expires_at
+        - creator_capability
+        - lead_invitation_url
+        - lead_invitation_message
+        - guest_invitation_url
+        - guest_invitation_message
+        - observer_url
+        - observer_message
+      properties:
+        room_id:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+        expires_at:
+          type: string
+          format: date-time
+        creator_capability:
+          type: string
+          writeOnly: true
+        lead_invitation_url:
+          type: string
+          format: uri
+          writeOnly: true
+        lead_invitation_message:
+          type: string
+          writeOnly: true
+        guest_invitation_url:
+          type: string
+          format: uri
+          writeOnly: true
+        guest_invitation_message:
+          type: string
+          writeOnly: true
+        observer_url:
+          type: string
+          format: uri
+          writeOnly: true
+        observer_message:
+          type: string
+          writeOnly: true
+    RoomStatus:
+      type: object
+      required:
+        - room_id
+        - status
+        - created_at
+        - expires_at
+        - message_count
+        - message_bytes
+        - message_bytes_limit
+        - last_number
+        - has_final
+      properties:
+        room_id:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+        status:
+          type: string
+          enum: [open, finalized]
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        message_bytes:
+          type: integer
+          minimum: 0
+        message_bytes_limit:
+          type: integer
+          const: 8388608
+        last_number:
+          type: integer
+          minimum: 0
+        has_final:
+          type: boolean
+    RoomMessage:
+      type: object
+      required: [number, role, text, created_at]
+      properties:
+        number:
+          type: integer
+          minimum: 1
+        role:
+          type: string
+          enum: [creator, guest]
+        text:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    RoomFinal:
+      type: object
+      required: [markdown, sha256]
+      properties:
+        markdown:
+          type: string
+        sha256:
+          $ref: "#/components/schemas/Sha256"
+    Sha256:
+      type: string
+      pattern: "^[0-9a-f]{64}$"
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing, invalid, or expired capability
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: The capability role cannot perform this operation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Operation conflicts with the current room state
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RoomGone:
+      description: Room was closed, collected, or deleted after expiry
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ContentTooLarge:
+      description: Request exceeds a content or room budget
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnsupportedMediaType:
+      description: Expected application/json
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Creation, room request, or concurrent-wait limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Suggested delay in seconds.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

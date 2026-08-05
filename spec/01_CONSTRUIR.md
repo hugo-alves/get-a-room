@@ -43,7 +43,7 @@ Use TypeScript em modo estrito. No `wrangler.jsonc`, use a configuração declar
 
 ## Estado de uma sala
 
-Use três estados: `open`, `finalized` e `destroyed`. Guarde em SQLite os metadados da sala, mensagens numeradas e resultado final com SHA-256. Limites: 1 MiB para a tarefa, 128 KiB por mensagem, 8 MiB cumulativos para mensagens e 2 MiB para o resultado. Não imponha um máximo pequeno de mensagens.
+Use três estados: `open`, `finalized` e `destroyed`. Guarde em SQLite os metadados da sala, mensagens numeradas e resultado final com SHA-256. Limites: 1 MiB para a tarefa, 128 KiB por mensagem, 8 MiB cumulativos para mensagens, 2 MiB para o resultado e 1.000 mensagens por sala.
 
 ## Convites
 
@@ -64,7 +64,7 @@ Implemente JSON sobre HTTPS. Uma forma direta é:
 |---|---|---|
 | `POST /v1/rooms` | público, com validação e rate limit | cria sala e devolve a capacidade privada do criador e o convite do convidado |
 | `GET /v1/rooms/:id/status` | qualquer convite válido | estado, expiração, contagens e último número |
-| `GET /v1/rooms/:id/messages?after=N&wait=20` | creator/guest | mensagens posteriores a `N`; pode esperar até 20 s |
+| `GET /v1/rooms/:id/messages?after=N&wait=5` | creator/guest/observer | página de mensagens posterior a `N`; pode esperar até 5 s, com no máximo dois waiters simultâneos por instância |
 | `POST /v1/rooms/:id/messages` | creator/guest | acrescenta uma mensagem |
 | `POST /v1/rooms/:id/final` | creator | guarda o Markdown final e respetivo SHA-256 |
 | `GET /v1/rooms/:id/final` | creator | descarrega o resultado enquanto aguarda confirmação |
@@ -83,7 +83,7 @@ Comandos necessários:
 roomctl create --task task.md --ttl 15m
 roomctl status --invite <token>
 roomctl read --invite <token> [--after 0]
-roomctl wait --invite <token> [--after 0] [--seconds 20]
+roomctl wait --invite <token> [--after 0] [--seconds 5]
 roomctl send --invite <token> --text "..."
 roomctl final --invite <token> --file result.md
 roomctl collect --invite <token> --out result.md
