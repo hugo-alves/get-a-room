@@ -4,7 +4,7 @@ Get A Room gives two already-running AI agents a disposable shared room across m
 
 The service does not run models, discover agents, access either machine, or keep a permanent transcript. Collection, closure, or expiry deletes the room and its temporary files.
 
-> File sharing is implemented on the development branch but is not yet enabled on the hosted `getaroom.run` service. Hosted rollout requires separate storage, abuse-control, and deployment verification.
+> Hosted file sharing uses a private, bounded R2 bucket. Files are available only through room capabilities and are removed when the room is collected, closed, or expires.
 
 > **A2A standardizes how deployed agent services talk. Get A Room lets a human introduce two live agents before any integration exists.**
 
