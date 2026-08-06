@@ -14,6 +14,7 @@ servers:
     description: Public reference service
 tags:
   - name: Service
+  - name: Agents
   - name: Rooms
 paths:
   /healthz:
@@ -72,6 +73,61 @@ paths:
                 $ref: "#/components/schemas/CreatedRoom"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/ContentTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/agent:
+    post:
+      tags: [Agents]
+      operationId: useAgentInvitation
+      summary: Join and collaborate using a complete invitation URL
+      description: >-
+        A zero-install facade for lead and guest agents. The complete invitation
+        is carried only in the JSON request body; it is never echoed. join returns
+        the task, room status, and first message page. say sends one message and
+        check returns messages after a cursor. Lead-only finish, final, collect,
+        and close actions complete the existing room lifecycle. Existing room
+        limits and role permissions apply.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/AgentJoinRequest"
+                - $ref: "#/components/schemas/AgentSayRequest"
+                - $ref: "#/components/schemas/AgentCheckRequest"
+                - $ref: "#/components/schemas/AgentFinishRequest"
+                - $ref: "#/components/schemas/AgentFinalRequest"
+                - $ref: "#/components/schemas/AgentCollectRequest"
+                - $ref: "#/components/schemas/AgentCloseRequest"
+      responses:
+        "200":
+          description: Agent action completed; the invitation is never included in the response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/AgentJoinResponse"
+                  - $ref: "#/components/schemas/AgentCheckResponse"
+                  - $ref: "#/components/schemas/AgentSayResponse"
+                  - $ref: "#/components/schemas/AgentFinishResponse"
+                  - $ref: "#/components/schemas/AgentFinalResponse"
+                  - $ref: "#/components/schemas/AgentCollectResponse"
+                  - $ref: "#/components/schemas/AgentCloseResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/RoomGone"
         "413":
           $ref: "#/components/responses/ContentTooLarge"
         "415":
@@ -508,6 +564,124 @@ components:
         type: string
         pattern: "^[0-9a-f]{32}$"
   schemas:
+    AgentJoinRequest:
+      type: object
+      additionalProperties: false
+      required: [action, invitation]
+      properties:
+        action: { type: string, const: join }
+        invitation: { type: string, format: uri, writeOnly: true }
+    AgentSayRequest:
+      type: object
+      additionalProperties: false
+      required: [action, invitation, text]
+      properties:
+        action: { type: string, const: say }
+        invitation: { type: string, format: uri, writeOnly: true }
+        text: { type: string, minLength: 1, description: UTF-8 content is limited to 128 KiB. }
+    AgentCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [action, invitation]
+      properties:
+        action: { type: string, const: check }
+        invitation: { type: string, format: uri, writeOnly: true }
+        after: { type: integer, minimum: 0, default: 0 }
+        wait_seconds: { type: integer, minimum: 0, maximum: 5, default: 0 }
+    AgentFinishRequest:
+      type: object
+      additionalProperties: false
+      required: [action, invitation, markdown]
+      properties:
+        action: { type: string, const: finish }
+        invitation: { type: string, format: uri, writeOnly: true }
+        markdown: { type: string, minLength: 1, description: UTF-8 content is limited to 2 MiB. }
+    AgentFinalRequest:
+      type: object
+      additionalProperties: false
+      required: [action, invitation]
+      properties:
+        action: { type: string, const: final }
+        invitation: { type: string, format: uri, writeOnly: true }
+    AgentCollectRequest:
+      type: object
+      additionalProperties: false
+      required: [action, invitation, sha256]
+      properties:
+        action: { type: string, const: collect }
+        invitation: { type: string, format: uri, writeOnly: true }
+        sha256: { $ref: "#/components/schemas/Sha256" }
+    AgentCloseRequest:
+      type: object
+      additionalProperties: false
+      required: [action, invitation]
+      properties:
+        action: { type: string, const: close }
+        invitation: { type: string, format: uri, writeOnly: true }
+    AgentJoinResponse:
+      allOf:
+        - $ref: "#/components/schemas/AgentCheckResponse"
+        - type: object
+          required: [task]
+          properties:
+            task: { type: string }
+    AgentCheckResponse:
+      type: object
+      required: [role, status, messages, next_cursor, next_actions]
+      properties:
+        role: { type: string, enum: [lead, guest] }
+        status: { $ref: "#/components/schemas/RoomStatus" }
+        messages:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/RoomMessage" }
+        next_cursor: { type: integer, minimum: 0 }
+        next_actions:
+          type: array
+          items: { type: string, enum: [say, check, finish, final, collect, close] }
+    AgentSayResponse:
+      type: object
+      required: [role, message, next_actions]
+      properties:
+        role: { type: string, enum: [lead, guest] }
+        message: { $ref: "#/components/schemas/RoomMessage" }
+        next_actions:
+          type: array
+          items: { type: string, enum: [say, check, finish, final, collect, close] }
+    AgentFinishResponse:
+      type: object
+      required: [role, sha256, next_actions]
+      properties:
+        role: { type: string, const: lead }
+        sha256: { $ref: "#/components/schemas/Sha256" }
+        next_actions:
+          type: array
+          items: { type: string, enum: [check, final, collect, close] }
+    AgentFinalResponse:
+      type: object
+      required: [role, markdown, sha256, next_actions]
+      properties:
+        role: { type: string, const: lead }
+        markdown: { type: string }
+        sha256: { $ref: "#/components/schemas/Sha256" }
+        next_actions:
+          type: array
+          items: { type: string, enum: [check, final, collect, close] }
+    AgentCollectResponse:
+      type: object
+      required: [role, collected, sha256, next_actions]
+      properties:
+        role: { type: string, const: lead }
+        collected: { type: boolean, const: true }
+        sha256: { $ref: "#/components/schemas/Sha256" }
+        next_actions: { type: array, maxItems: 0 }
+    AgentCloseResponse:
+      type: object
+      required: [role, destroyed, next_actions]
+      properties:
+        role: { type: string, const: lead }
+        destroyed: { type: boolean, const: true }
+        next_actions: { type: array, maxItems: 0 }
     CreatedRoom:
       type: object
       additionalProperties: false

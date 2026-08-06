@@ -50,6 +50,14 @@ async function createRoom(task = "# Task", ttlSeconds = 24 * 60 * 60, callerIp?:
   return response.json<CreatedRoom>();
 }
 
+function agentRequest(body: Record<string, unknown>): Promise<Response> {
+  return workerFetch("/v1/agent", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function createRoomResponse(task: string, ttlSeconds: number, callerIp: string): Promise<Response> {
   return workerFetch("/v1/rooms", {
     method: "POST",
@@ -82,15 +90,17 @@ describe("temporary agent room", () => {
     await expect(response.json()).resolves.toEqual({ ok: true, service: "get-a-room" });
   });
 
-  it("serves a safe branded join page without accepting invitation data", async () => {
+  it("serves a same-origin browser client that reads its invitation from the fragment", async () => {
     const response = await workerFetch("/join");
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
     const html = await response.text();
     expect(html).toContain("Get A Room");
-    expect(html).toContain("Return to the agent chat and paste the complete invitation there");
-    expect(html).toContain("Do not open the private invitation URL in a browser");
+    expect(html).toContain('location.hash.slice(1)');
+    expect(html).toContain('fetch("/v1/agent"');
+    expect(html).toContain("Send a message");
+    expect(response.headers.get("content-security-policy")).toContain("connect-src 'self'");
   });
 
   it("permanently redirects www to the canonical apex domain", async () => {
@@ -107,9 +117,11 @@ describe("temporary agent room", () => {
     expect(room.creator_capability).not.toBe("");
     expect(room.guest_invitation_url).toMatch(/^https:\/\/getaroom\.run\/join#invite=/);
     expect(room.guest_invitation_message).toContain(room.guest_invitation_url);
-    expect(room.guest_invitation_message).toContain("not a web browser");
-    expect(room.guest_invitation_message).toContain("Do not open the private URL");
-    expect(room.guest_invitation_message).toContain("Use the Get A Room skill and follow its guest workflow now");
+    expect(room.guest_invitation_message).toContain("No skill, plugin, or CLI is required");
+    expect(room.guest_invitation_message).toContain("https://getaroom.run/v1/agent");
+    expect(room.guest_invitation_message).toContain("open the private URL in a browser");
+    expect(room.guest_invitation_message).toContain(JSON.stringify({ action: "join", invitation: room.guest_invitation_url }));
+    expect(room.guest_invitation_message).not.toContain("<the complete private URL below>");
     expect(Date.parse(room.expires_at)).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
 
     const task = await workerFetch(`/v1/rooms/${room.room_id}/task`, authenticated(room.creator_capability));
@@ -240,6 +252,134 @@ describe("temporary agent room", () => {
 
     const status = await workerFetch(`/v1/rooms/${room.room_id}/status`, authenticated(room.creator_capability));
     await expect(status.json()).resolves.toMatchObject({ attachment_count: MAX_ATTACHMENTS_PER_ROOM });
+  });
+
+  it("joins, sends, and checks using only the complete invitation URL", async () => {
+    const room = await createRoom("Compare the two proposals");
+    const invitation = room.guest_invitation_url;
+    const credential = inviteFromUrl(invitation);
+
+    const joined = await agentRequest({ action: "join", invitation });
+    expect(joined.status).toBe(200);
+    const joinedText = await joined.text();
+    expect(joinedText).not.toContain(credential);
+    expect(JSON.parse(joinedText)).toMatchObject({
+      role: "guest",
+      task: "Compare the two proposals",
+      messages: [],
+      next_cursor: 0,
+      next_actions: ["say", "check"],
+      status: { room_id: room.room_id, status: "open", message_count: 0 },
+    });
+
+    const leadJoined = await agentRequest({ action: "join", invitation: room.lead_invitation_url });
+    expect(leadJoined.status).toBe(200);
+    await expect(leadJoined.json()).resolves.toMatchObject({
+      role: "lead",
+      task: "Compare the two proposals",
+      next_actions: ["say", "check", "finish", "close"],
+    });
+
+    const said = await agentRequest({ action: "say", invitation, text: "Guest analysis" });
+    expect(said.status).toBe(200);
+    await expect(said.json()).resolves.toMatchObject({ role: "guest", message: { number: 1, role: "guest", text: "Guest analysis" } });
+
+    const leadMessage = await workerFetch(
+      `/v1/rooms/${room.room_id}/messages`,
+      authenticated(room.creator_capability, "POST", { text: "Lead reply" }),
+    );
+    expect(leadMessage.status).toBe(201);
+
+    const checked = await agentRequest({ action: "check", invitation, after: 1, wait_seconds: 0 });
+    expect(checked.status).toBe(200);
+    await expect(checked.json()).resolves.toMatchObject({
+      role: "guest",
+      messages: [{ number: 2, role: "creator", text: "Lead reply" }],
+      next_cursor: 2,
+      next_actions: ["say", "check"],
+    });
+  });
+
+  it("completes the zero-install lead final lifecycle without leaking its invitation", async () => {
+    const room = await createRoom("Produce the final answer");
+    const invitation = room.lead_invitation_url;
+    const credential = inviteFromUrl(invitation);
+
+    const finished = await agentRequest({ action: "finish", invitation, markdown: "# Final answer" });
+    expect(finished.status).toBe(200);
+    const finishedText = await finished.text();
+    expect(finishedText).not.toContain(credential);
+    const finishedBody = JSON.parse(finishedText) as { sha256: string; next_actions: string[] };
+    expect(finishedBody.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(finishedBody.next_actions).toEqual(["check", "final", "collect", "close"]);
+
+    const rejectedMessage = await agentRequest({ action: "say", invitation, text: "Too late" });
+    expect(rejectedMessage.status).toBe(409);
+    expect(await rejectedMessage.text()).not.toContain(credential);
+
+    const checked = await agentRequest({ action: "check", invitation, after: 0 });
+    expect(checked.status).toBe(200);
+    await expect(checked.json()).resolves.toMatchObject({ next_actions: ["check", "final", "collect", "close"] });
+
+    const final = await agentRequest({ action: "final", invitation });
+    expect(final.status).toBe(200);
+    const finalText = await final.text();
+    expect(finalText).not.toContain(credential);
+    expect(JSON.parse(finalText)).toMatchObject({ markdown: "# Final answer", sha256: finishedBody.sha256 });
+
+    const wrongDigest = await agentRequest({ action: "collect", invitation, sha256: "0".repeat(64) });
+    expect(wrongDigest.status).toBe(409);
+    expect(await wrongDigest.text()).not.toContain(credential);
+    expect((await agentRequest({ action: "final", invitation })).status).toBe(200);
+
+    const collected = await agentRequest({ action: "collect", invitation, sha256: finishedBody.sha256 });
+    expect(collected.status).toBe(200);
+    await expect(collected.json()).resolves.toMatchObject({ collected: true, sha256: finishedBody.sha256, next_actions: [] });
+    expect((await agentRequest({ action: "join", invitation })).status).toBe(410);
+  });
+
+  it("closes through the lead facade and rejects every lead action for guests", async () => {
+    const room = await createRoom("Close this room");
+    const guestInvitation = room.guest_invitation_url;
+    const guestCredential = inviteFromUrl(guestInvitation);
+    const attempts = [
+      { action: "finish", invitation: guestInvitation, markdown: "not allowed" },
+      { action: "final", invitation: guestInvitation },
+      { action: "collect", invitation: guestInvitation, sha256: "0".repeat(64) },
+      { action: "close", invitation: guestInvitation },
+    ];
+    for (const attempt of attempts) {
+      const response = await agentRequest(attempt);
+      expect(response.status).toBe(403);
+      expect(await response.text()).not.toContain(guestCredential);
+    }
+
+    const closed = await agentRequest({ action: "close", invitation: room.lead_invitation_url });
+    expect(closed.status).toBe(200);
+    await expect(closed.json()).resolves.toMatchObject({ destroyed: true, next_actions: [] });
+    expect((await agentRequest({ action: "join", invitation: room.lead_invitation_url })).status).toBe(410);
+  });
+
+  it("keeps agent invitations out of URLs, errors, and responses", async () => {
+    const room = await createRoom("Secret-safe facade");
+    const invitation = room.guest_invitation_url;
+    const credential = inviteFromUrl(invitation);
+
+    const badHost = await agentRequest({ action: "join", invitation: invitation.replace("getaroom.run", "example.com") });
+    expect(badHost.status).toBe(400);
+    expect(await badHost.text()).not.toContain(credential);
+
+    const unexpected = await agentRequest({ action: "join", invitation, credential });
+    expect(unexpected.status).toBe(400);
+    expect(await unexpected.text()).not.toContain(credential);
+
+    const observer = await agentRequest({ action: "join", invitation: room.observer_url.replace("/watch#", "/join#") });
+    expect(observer.status).toBe(403);
+    expect(await observer.text()).not.toContain(inviteFromUrl(room.observer_url));
+
+    const oversized = await agentRequest({ action: "say", invitation, text: "x".repeat(MAX_MESSAGE_BYTES + 1) });
+    expect(oversized.status).toBe(413);
+    expect(await oversized.text()).not.toContain(credential);
   });
 
   it("validates anonymous creation before allocating a room", async () => {
@@ -414,8 +554,11 @@ describe("temporary agent room", () => {
     expect(inviteFromUrl(room.lead_invitation_url)).toBe(room.creator_capability);
     expect(room.lead_invitation_message).toContain(room.lead_invitation_url);
     expect(room.lead_invitation_message).not.toContain(inviteFromUrl(room.guest_invitation_url));
-    expect(room.lead_invitation_message).toContain("Do not open the private URL");
-    expect(room.lead_invitation_message).toContain("use the Get A Room skill and follow the lead workflow now");
+    expect(room.lead_invitation_message).toContain("No skill, plugin, or CLI is required");
+    expect(room.lead_invitation_message).toContain("https://getaroom.run/v1/agent");
+    expect(room.lead_invitation_message).toContain("open the private URL in a browser");
+    expect(room.lead_invitation_message).toContain(JSON.stringify({ action: "join", invitation: room.lead_invitation_url }));
+    expect(room.lead_invitation_message).toContain(JSON.stringify({ action: "close", invitation: room.lead_invitation_url }));
 
     const status = await workerFetch(
       `/v1/rooms/${room.room_id}/status`,

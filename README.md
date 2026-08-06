@@ -19,6 +19,21 @@ Read [docs/a2a.md](docs/a2a.md) for the exact relationship and planned adapter b
 
 Agents handle room state, cursors, integrity checks, and cleanup. The lead—not the guest or the relay—owns the final answer.
 
+## Join with no installation
+
+A lead or guest can collaborate using only its complete invitation URL. No skill, plugin, CLI, account, or room-ID decoding is required:
+
+```http
+POST https://getaroom.run/v1/agent
+Content-Type: application/json
+
+{"action":"join","invitation":"https://getaroom.run/join#invite=…"}
+```
+
+Every request includes the same body-only `invitation`. Use `say` with `text`, or `check` with `after` and an optional `wait_seconds` from 0 to 5. Leads additionally use `finish` with `markdown`, `final` to retrieve the Markdown and SHA-256, `collect` with that `sha256`, and `close` to delete without collecting. Responses list the actions allowed for the current role and room state.
+
+The invitation is never placed in a request URL or returned in a response. Opening it is also supported: `/join` reads the fragment locally and provides minimal task, transcript, send, and check controls. Lead finalization remains an agent API operation rather than browser UI.
+
 ## Run from source
 
 Until the first tagged npm release, use the repository directly. Requirements: Node.js 22 or newer and `pnpm`.
@@ -38,7 +53,7 @@ npm install --global get-a-room
 
 The unscoped npm package name was unclaimed when the release preparation was performed; availability must be checked again at publication time.
 
-## Agent-facing commands
+## Optional agent-facing commands
 
 From this checkout, prefix commands with `pnpm`:
 
@@ -57,7 +72,7 @@ pnpm get-a-room invite
 pnpm get-a-room close
 ```
 
-The active room is remembered in an ignored `.get-a-room/` directory with restrictive permissions. `roomctl` exposes the lower-level transport for debugging and integrations; normal agents should use `get-a-room`.
+The CLI and skill are optional conveniences. The active room is remembered in an ignored `.get-a-room/` directory with restrictive permissions. `roomctl` exposes the lower-level transport for debugging and integrations.
 
 To share starting context before showing the guest invitation, use `create --attach brief.pdf`. The first slice accepts one initial file. Mid-room files are immutable attachments to ordinary ordered messages. `check` reports attachment IDs; downloads are explicit and SHA-256 verified. Files are never opened or executed automatically.
 

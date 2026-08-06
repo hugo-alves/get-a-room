@@ -56,6 +56,16 @@ export async function inspectInvite(
   token: string,
   expectedRoomId: string,
 ): Promise<{ claims: InviteClaims; expired: boolean }> {
+  const verified = await inspectInvitation(secret, token);
+  if (verified.claims.room_id !== expectedRoomId) throw new HttpError(401, "invalid_invite", "Invalid invite");
+  return verified;
+}
+
+export function inspectUnscopedInvite(secret: string, token: string): Promise<{ claims: InviteClaims; expired: boolean }> {
+  return inspectInvitation(secret, token);
+}
+
+async function inspectInvitation(secret: string, token: string): Promise<{ claims: InviteClaims; expired: boolean }> {
   const segments = token.split(".");
   if (segments.length !== 2 || !segments[0] || !segments[1]) {
     throw new HttpError(401, "invalid_invite", "Invalid invite");
@@ -75,7 +85,7 @@ export async function inspectInvite(
   } catch {
     throw new HttpError(401, "invalid_invite", "Invalid invite");
   }
-  if (!isClaims(claims) || claims.room_id !== expectedRoomId) {
+  if (!isClaims(claims)) {
     throw new HttpError(401, "invalid_invite", "Invalid invite");
   }
   const now = Math.floor(Date.now() / 1000);

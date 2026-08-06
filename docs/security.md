@@ -22,6 +22,8 @@ This is a practical threat model for the reference implementation. It is not a f
 
 - HMAC-signed, expiring role capabilities.
 - Capabilities in URL fragments rather than query strings for browser invitations.
+- The zero-install agent facade accepts complete invitations only in JSON request bodies and never echoes them in responses or errors.
+- The `/join` browser client reads the fragment locally and sends it only to the same-origin facade; the initial page request contains no capability.
 - HTTPS-only clients outside loopback development and exact invitation-host validation.
 - Restrictive local session permissions and redacted diagnostics.
 - Size, message-count, transcript-page, long-poll, creation-rate, and room-request limits.

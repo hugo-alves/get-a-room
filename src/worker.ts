@@ -1,10 +1,13 @@
-import { bearerToken, createInvite, inspectInvite } from "./auth";
+import { bearerToken, createInvite, inspectInvite, inspectUnscopedInvite } from "./auth";
 import { faviconImage, landingPage, roomPlanImage } from "./landing";
 import { Room } from "./room";
 import {
   CREATION_RATE_LIMIT_WINDOW_SECONDS,
   DEFAULT_TTL_SECONDS,
   HttpError,
+  MAX_FINAL_BYTES,
+  MAX_LONG_POLL_SECONDS,
+  MAX_MESSAGE_BYTES,
   MAX_TASK_BYTES,
   MAX_TTL_SECONDS,
   MIN_TTL_SECONDS,
@@ -43,6 +46,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && url.pathname === "/watch") return watchPage();
   if (request.method === "GET" && url.pathname === "/new") return newRoomPage();
   if (request.method === "POST" && url.pathname === "/v1/rooms") return createRoom(request, env);
+  if (request.method === "POST" && url.pathname === "/v1/agent") return agentRequest(request, env);
 
   const match = /^\/v1\/rooms\/([^/]+)(?:\/(status|task|messages|final|collect|attachments)(?:\/([^/]+))?)?$/u.exec(url.pathname);
   if (!match) throw new HttpError(404, "not_found", "Route not found");
@@ -88,22 +92,89 @@ function joinPage(): Response {
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
     main { width: min(36rem, calc(100% - 3rem)); padding: 3rem 0; }
     h1 { font-size: clamp(2.5rem, 10vw, 5rem); line-height: .95; letter-spacing: -.06em; margin: 0 0 2rem; }
-    p { max-width: 31rem; }
-    .note { border-left: 4px solid #eb5e28; padding-left: 1rem; }
+    p { max-width: 36rem; }
+    .panel { background: #fff; border: 1px solid #e2ddd2; border-radius: .5rem; padding: 1rem 1.25rem; margin: 1rem 0; }
+    .note { color: #6b6459; }
+    .error { color: #a33; font-weight: 600; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 7rem; font: inherit; padding: .6rem; border: 1px solid #d5cfc2; border-radius: .35rem; }
+    button { font: inherit; font-weight: 600; background: #eb5e28; color: #fff; border: 0; border-radius: .35rem; padding: .6rem 1.1rem; cursor: pointer; margin-top: .75rem; }
+    button.secondary { background: #191713; margin-left: .5rem; }
+    button:disabled { opacity: .5; cursor: default; }
+    .m { border-left: 4px solid #ccc; padding: .25rem 0 .25rem .85rem; margin: .85rem 0; }
+    .m.creator { border-color: #eb5e28; }
+    .m.guest { border-color: #2a6f97; }
+    .who { font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    .m p { white-space: pre-wrap; word-break: break-word; margin: .2rem 0; }
+    pre { white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>
 <body><main>
   <h1>Get A Room</h1>
-  <p>This private invitation is meant for an AI agent, not a web browser.</p>
-  <p class="note"><strong>Return to the agent chat and paste the complete invitation there.</strong> The agent should use the Get A Room skill and follow its assigned role workflow. Do not open the private invitation URL in a browser.</p>
-  <p>Keep the full invitation intact. The private credential stays after <code>#invite=</code> and is never sent to this page.</p>
+  <p id="state">Joining the private room…</p>
+  <div class="panel" id="room" hidden>
+    <p class="note" id="meta"></p>
+    <h2>Task</h2><pre id="task"></pre>
+    <h2>Messages</h2><div id="messages"></div>
+    <label for="message"><strong>Send a message</strong></label>
+    <textarea id="message" placeholder="Write your contribution"></textarea>
+    <div><button id="send" type="button">Send</button><button id="check" class="secondary" type="button">Check for messages</button></div>
+  </div>
+  <p class="error" id="error" hidden></p>
+  <p class="note">The private credential remains in the URL fragment and is sent only in same-origin request bodies. Treat this page like a password while the room is active.</p>
+  <script>
+  (function () {
+    "use strict";
+    function el(id) { return document.getElementById(id); }
+    var invitation = location.href, cursor = 0, busy = false;
+    var params = new URLSearchParams(location.hash.slice(1));
+    if (!params.get("invite")) return fail("This page needs a complete invitation ending in #invite=…");
+
+    function fail(message, stateMessage) { if (stateMessage) el("state").textContent = stateMessage; el("error").textContent = message; el("error").hidden = false; }
+    function clearError() { el("error").textContent = ""; el("error").hidden = true; }
+    async function call(body) {
+      var response = await fetch("/v1/agent", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(Object.assign({ invitation: invitation }, body)) });
+      var value;
+      try { value = await response.json(); } catch (error) { throw new Error("The room service returned an unreadable response."); }
+      if (!response.ok) throw new Error(value && value.message ? value.message : "Room request failed (HTTP " + response.status + ").");
+      return value;
+    }
+    function add(message) {
+      var wrap = document.createElement("div"); wrap.className = "m " + message.role;
+      var who = document.createElement("span"); who.className = "who"; who.textContent = message.role === "creator" ? "Lead" : "Guest";
+      var text = document.createElement("p"); text.textContent = message.text;
+      wrap.appendChild(who); wrap.appendChild(text); el("messages").appendChild(wrap);
+      if (message.number > cursor) cursor = message.number;
+    }
+    function update(value) {
+      if (value.status) el("meta").textContent = "Role: " + value.role + " · Status: " + value.status.status + " · Expires " + new Date(value.status.expires_at).toLocaleString();
+      (value.messages || []).forEach(add);
+    }
+    async function join() {
+      try { var value = await call({ action: "join" }); el("task").textContent = value.task; update(value); clearError(); el("state").textContent = "Connected"; el("room").hidden = false; }
+      catch (error) { fail(error instanceof Error ? error.message : "Could not join the room.", "Could not join"); }
+    }
+    el("send").addEventListener("click", async function () {
+      if (busy || !el("message").value) return; busy = true; el("send").disabled = true;
+      try { var value = await call({ action: "say", text: el("message").value }); clearError(); el("message").value = ""; add(value.message); }
+      catch (error) { fail(error instanceof Error ? error.message : "Could not send the message."); }
+      finally { busy = false; el("send").disabled = false; }
+    });
+    el("check").addEventListener("click", async function () {
+      if (busy) return; busy = true; el("check").disabled = true;
+      try { update(await call({ action: "check", after: cursor, wait_seconds: 1 })); clearError(); }
+      catch (error) { fail(error instanceof Error ? error.message : "Could not check the room."); }
+      finally { busy = false; el("check").disabled = false; }
+    });
+    join();
+  })();
+  </script>
 </main></body>
 </html>`;
   return new Response(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
       "x-frame-options": "DENY",
@@ -454,6 +525,158 @@ function watchPage(): Response {
   });
 }
 
+const MAX_AGENT_ENVELOPE_BYTES = MAX_FINAL_BYTES + 16 * 1024;
+const MAX_INVITATION_BYTES = 16 * 1024;
+
+async function agentRequest(request: Request, env: Env): Promise<Response> {
+  const body = await readJson(request, MAX_AGENT_ENVELOPE_BYTES);
+  const action = requiredString(body.action, "action", 16);
+  const agentActions = ["join", "say", "check", "finish", "final", "collect", "close"];
+  if (!agentActions.includes(action)) {
+    throw new HttpError(400, "invalid_request", "action must be join, say, check, finish, final, collect, or close");
+  }
+  const allowedFields =
+    action === "say"
+      ? ["action", "invitation", "text"]
+      : action === "check"
+        ? ["action", "invitation", "after", "wait_seconds"]
+        : action === "finish"
+          ? ["action", "invitation", "markdown"]
+          : action === "collect"
+            ? ["action", "invitation", "sha256"]
+            : ["action", "invitation"];
+  assertAgentFields(body, allowedFields);
+  const invitation = requiredString(body.invitation, "invitation", MAX_INVITATION_BYTES);
+  const token = invitationToken(invitation, request, env);
+  const verified = await inspectUnscopedInvite(env.ROOM_SIGNING_SECRET, token);
+  if (verified.expired) throw new HttpError(401, "expired_invite", "Invite has expired");
+  if (verified.claims.role === "observer") throw new HttpError(403, "forbidden", "A lead or guest invitation is required");
+
+  const { room_id: roomId, role } = verified.claims;
+  await enforceRoomRequestLimit(roomId, env);
+  const stub = env.ROOMS.get(env.ROOMS.idFromName(roomId));
+
+  if (action === "finish") {
+    const markdown = requiredString(body.markdown, "markdown", MAX_FINAL_BYTES);
+    const result = await agentInternalJson(stub, role, "/final", "POST", { markdown });
+    return json({ role: "lead", ...result, next_actions: agentNextActions(role, "finalized") });
+  }
+  if (action === "final") {
+    const result = await agentInternalJson(stub, role, "/final");
+    return json({ role: "lead", ...result, next_actions: agentNextActions(role, "finalized") });
+  }
+  if (action === "collect") {
+    const sha256 = requiredString(body.sha256, "sha256", 64);
+    const result = await agentInternalJson(stub, role, "/collect", "POST", { sha256 });
+    return json({ role: "lead", ...result, next_actions: [] });
+  }
+  if (action === "close") {
+    const result = await agentInternalJson(stub, role, "/", "DELETE");
+    return json({ role: "lead", ...result, next_actions: [] });
+  }
+
+  if (action === "say") {
+    const text = requiredString(body.text, "text", MAX_MESSAGE_BYTES);
+    const message = await agentInternalJson(stub, role, "/messages", "POST", { text });
+    return json({ role: agentRoleName(role), ...message, next_actions: agentNextActions(role, "open") });
+  }
+
+  const after = action === "check" ? boundedAgentInteger(body.after, "after", 0, Number.MAX_SAFE_INTEGER, 0) : 0;
+  const wait = action === "check" ? boundedAgentInteger(body.wait_seconds, "wait_seconds", 0, MAX_LONG_POLL_SECONDS, 0) : 0;
+  const status = await agentInternalJson(stub, role, "/status");
+  const messages = await agentInternalJson(stub, role, `/messages?after=${after}&wait=${wait}`);
+  const messageList: unknown[] = Array.isArray(messages.messages) ? (messages.messages as unknown[]) : [];
+  const nextCursor = messageList.reduce<number>(
+    (cursor, message) =>
+      typeof message === "object" && message !== null && typeof (message as { number?: unknown }).number === "number"
+        ? Math.max(cursor, (message as { number: number }).number)
+        : cursor,
+    after,
+  );
+  const state = status.status === "finalized" ? "finalized" : "open";
+  const common = {
+    role: agentRoleName(role),
+    status,
+    messages: messageList,
+    next_cursor: nextCursor,
+    next_actions: agentNextActions(role, state),
+  };
+  if (action === "check") return json(common);
+  const task = await agentInternalJson(stub, role, "/task");
+  return json({ ...common, task: task.task });
+}
+
+function invitationToken(invitation: string, request: Request, env: Env): string {
+  let url: URL;
+  try {
+    url = new URL(invitation);
+  } catch {
+    throw new HttpError(400, "invalid_invitation_url", "invitation must be a complete Get A Room invitation URL");
+  }
+  const expected = new URL(publicBaseUrl(request, env));
+  if (
+    url.origin !== expected.origin ||
+    url.pathname !== "/join" ||
+    url.search !== "" ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    throw new HttpError(400, "invalid_invitation_url", "Invitation URL host or path is not trusted");
+  }
+  const fragment = new URLSearchParams(url.hash.slice(1));
+  if ([...fragment.keys()].length !== 1 || !fragment.has("invite")) {
+    throw new HttpError(400, "invalid_invitation_url", "Invitation URL must contain one invite fragment");
+  }
+  return requiredString(fragment.get("invite"), "invitation credential", MAX_INVITATION_BYTES);
+}
+
+async function agentInternalJson(
+  stub: DurableObjectStub,
+  role: "creator" | "guest",
+  path: string,
+  method = "GET",
+  body?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const headers = new Headers({ "x-room-role": role });
+  if (body !== undefined) headers.set("content-type", "application/json");
+  const response = await stub.fetch(`https://room.internal${path}`, {
+    method,
+    headers,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const value = (await response.json()) as Record<string, unknown>;
+  if (!response.ok) {
+    const code = typeof value.error === "string" ? value.error : "room_request_failed";
+    const message = typeof value.message === "string" ? value.message : "Room request failed";
+    const retryAfter = response.headers.get("retry-after");
+    throw new HttpError(response.status, code, message, retryAfter === null ? {} : { "retry-after": retryAfter });
+  }
+  return value;
+}
+
+function boundedAgentInteger(value: unknown, name: string, minimum: number, maximum: number, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) {
+    throw new HttpError(400, "invalid_request", `${name} must be an integer between ${minimum} and ${maximum}`);
+  }
+  return value as number;
+}
+
+function assertAgentFields(body: Record<string, unknown>, allowedFields: string[]): void {
+  const allowed = new Set(allowedFields);
+  const unexpected = Object.keys(body).find((field) => !allowed.has(field));
+  if (unexpected) throw new HttpError(400, "invalid_request", `Unexpected field: ${unexpected}`);
+}
+
+function agentRoleName(role: "creator" | "guest"): "lead" | "guest" {
+  return role === "creator" ? "lead" : "guest";
+}
+
+function agentNextActions(role: "creator" | "guest", state: "open" | "finalized"): string[] {
+  if (role === "guest") return state === "open" ? ["say", "check"] : ["check"];
+  return state === "open" ? ["say", "check", "finish", "close"] : ["check", "final", "collect", "close"];
+}
+
 async function createRoom(request: Request, env: Env): Promise<Response> {
   rejectOversizedCreationBody(request);
   const body = await readJson(request, MAX_TASK_BYTES + 4096);
@@ -556,12 +779,24 @@ function publicBaseUrl(request: Request, env: Env): string {
 }
 
 function leadInvitationMessage(leadInviteUrl: string, expiresAt: string): string {
+  const endpoint = `${new URL(leadInviteUrl).origin}/v1/agent`;
+  const withInvite = (action: string, fields: Record<string, unknown> = {}): string =>
+    JSON.stringify({ action, invitation: leadInviteUrl, ...fields });
   return [
     "Get A Room lead invitation",
     "",
-    "This invitation is for an AI agent, not a web browser. Do not open the private URL.",
-    "Give this entire invitation to YOUR agent. It must use the Get A Room skill and follow the lead workflow now. The lead runs the room and owns the final result:",
-    leadInviteUrl,
+    "Give this entire invitation to YOUR agent. The lead runs the room and owns the final result.",
+    "No skill, plugin, or CLI is required. POST to the endpoint below with Content-Type: application/json. Start with this complete, copy-ready body:",
+    endpoint,
+    withInvite("join"),
+    "Available request bodies:",
+    withInvite("say", { text: "your message" }),
+    withInvite("check", { after: 0, wait_seconds: 5 }),
+    withInvite("finish", { markdown: "final Markdown" }),
+    withInvite("final"),
+    withInvite("collect", { sha256: "SHA-256 returned by final" }),
+    withInvite("close"),
+    "You may instead open the private URL in a browser to join and collaborate.",
     "",
     `The URL carries the private lead credential. It can also finalize and close the room, expires at ${expiresAt}, and must be treated like a password.`,
   ].join("\n");
@@ -579,13 +814,20 @@ function observerMessage(observerUrl: string, expiresAt: string): string {
 }
 
 function invitationMessage(guestInviteUrl: string, expiresAt: string): string {
+  const endpoint = `${new URL(guestInviteUrl).origin}/v1/agent`;
+  const withInvite = (action: string, fields: Record<string, unknown> = {}): string =>
+    JSON.stringify({ action, invitation: guestInviteUrl, ...fields });
   return [
     "Get A Room invitation",
     "",
     "You have been invited to collaborate as the guest agent.",
-    "This invitation is for an AI agent, not a web browser. Do not open the private URL.",
-    "Use the Get A Room skill and follow its guest workflow now, using this entire invitation exactly as written:",
-    guestInviteUrl,
+    "No skill, plugin, or CLI is required. POST to the endpoint below with Content-Type: application/json. Start with this complete, copy-ready body:",
+    endpoint,
+    withInvite("join"),
+    "Available request bodies:",
+    withInvite("say", { text: "your message" }),
+    withInvite("check", { after: 0, wait_seconds: 5 }),
+    "You may instead open the private URL in a browser to join and collaborate.",
     "",
     `The URL carries your private guest credential. It expires at ${expiresAt}. Treat it like a password.`,
   ].join("\n");
