@@ -678,7 +678,22 @@ async function listAttachments(session: Session): Promise<RoomAttachment[]> {
   return body.attachments.map(parseAttachment);
 }
 
-async function downloadTo(session: Session, attachment: RoomAttachment, destination: string): Promise<void> {
+async function downloadTo(
+  session: Session,
+  attachment: RoomAttachment,
+  destination: string,
+  reuseVerifiedExisting = false,
+): Promise<void> {
+  if (reuseVerifiedExisting) {
+    try {
+      const existing = await readFile(destination);
+      const existingSha256 = createHash("sha256").update(existing).digest("hex");
+      if (existing.byteLength === attachment.size && existingSha256 === attachment.sha256) return;
+      throw new CommandError(`Refusing to overwrite existing file: ${destination}`);
+    } catch (error) {
+      if (!(isRecord(error) && error.code === "ENOENT")) throw error;
+    }
+  }
   let response: Response;
   try {
     response = await fetch(roomPath(session.base_url, session.room_id, `attachments/${attachment.id}`), {
@@ -783,7 +798,7 @@ async function collect(flags: Flags, json: boolean): Promise<void> {
   const attachments = await listAttachments(session);
   const attachmentsDirectory = `${destination}.files`;
   for (const attachment of attachments) {
-    await downloadTo(session, attachment, join(attachmentsDirectory, `${attachment.id}-${attachment.filename}`));
+    await downloadTo(session, attachment, join(attachmentsDirectory, `${attachment.id}-${attachment.filename}`), true);
   }
 
   await mkdir(dirname(destination), { recursive: true });

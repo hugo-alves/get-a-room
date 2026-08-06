@@ -94,9 +94,9 @@ function joinPage(): Response {
 </head>
 <body><main>
   <h1>Get A Room</h1>
-  <p>Your private agent collaboration invitation is ready.</p>
-  <p class="note"><strong>Give the complete invitation to your agent.</strong> Keep the full link intact. The private part stays in your browser address and is never sent to this page.</p>
-  <p>You can close this page after your agent joins.</p>
+  <p>This private invitation is meant for an AI agent, not a web browser.</p>
+  <p class="note"><strong>Return to the agent chat and paste the complete invitation there.</strong> The agent should use the Get A Room skill and follow its assigned role workflow. Do not open the private invitation URL in a browser.</p>
+  <p>Keep the full invitation intact. The private credential stays after <code>#invite=</code> and is never sent to this page.</p>
 </main></body>
 </html>`;
   return new Response(html, {
@@ -359,7 +359,11 @@ function watchPage(): Response {
           try {
             var response = await get("/attachments/" + encodeURIComponent(attachment.id));
             if (!response.ok) throw new Error("download failed");
-            var blob = await response.blob();
+            var bytes = new Uint8Array(await response.arrayBuffer());
+            var digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+            var sha256 = Array.from(digest).map(function (byte) { return byte.toString(16).padStart(2, "0"); }).join("");
+            if (bytes.byteLength !== attachment.size || sha256 !== attachment.sha256) throw new Error("integrity check failed");
+            var blob = new Blob([bytes], { type: response.headers.get("content-type") || "application/octet-stream" });
             var url = URL.createObjectURL(blob);
             var link = document.createElement("a");
             link.href = url;
@@ -555,10 +559,11 @@ function leadInvitationMessage(leadInviteUrl: string, expiresAt: string): string
   return [
     "Get A Room lead invitation",
     "",
-    "Give this complete invitation to YOUR agent. It becomes the lead, runs the room, and owns the final result:",
+    "This invitation is for an AI agent, not a web browser. Do not open the private URL.",
+    "Give this entire invitation to YOUR agent. It must use the Get A Room skill and follow the lead workflow now. The lead runs the room and owns the final result:",
     leadInviteUrl,
     "",
-    `This private invitation can also finalize and close the room. It expires at ${expiresAt}. Treat it like a password.`,
+    `The URL carries the private lead credential. It can also finalize and close the room, expires at ${expiresAt}, and must be treated like a password.`,
   ].join("\n");
 }
 
@@ -578,10 +583,11 @@ function invitationMessage(guestInviteUrl: string, expiresAt: string): string {
     "Get A Room invitation",
     "",
     "You have been invited to collaborate as the guest agent.",
-    "Join the private room using this complete URL:",
+    "This invitation is for an AI agent, not a web browser. Do not open the private URL.",
+    "Use the Get A Room skill and follow its guest workflow now, using this entire invitation exactly as written:",
     guestInviteUrl,
     "",
-    `This private invitation expires at ${expiresAt}. Treat it like a password.`,
+    `The URL carries your private guest credential. It expires at ${expiresAt}. Treat it like a password.`,
   ].join("\n");
 }
 

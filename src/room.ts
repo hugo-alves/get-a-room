@@ -237,12 +237,7 @@ export class Room implements DurableObject {
     if (!Number.isSafeInteger(size) || size < 0 || size > MAX_ATTACHMENT_BYTES) {
       throw new HttpError(413, "attachment_too_large", "Attachment exceeds the size limit");
     }
-    if (this.attachmentCount() >= MAX_ATTACHMENTS_PER_ROOM) {
-      throw new HttpError(413, "room_attachment_count_exceeded", "Room attachment count limit exceeded");
-    }
-    if (this.attachmentBytes() + size > MAX_TOTAL_ATTACHMENT_BYTES) {
-      throw new HttpError(413, "room_attachment_budget_exceeded", "Cumulative room attachment budget exceeded");
-    }
+    this.requireAttachmentCapacity(size);
     const filename = decodeFilename(request.headers.get("x-get-a-room-filename"));
     const mediaType = validateMediaType(request.headers.get("content-type"));
     const sha256 = request.headers.get("x-get-a-room-sha256")?.toLowerCase() ?? "";
@@ -268,6 +263,7 @@ export class Room implements DurableObject {
     const createdAt = Date.now();
     try {
       this.requireCurrentOpenRoom();
+      this.requireAttachmentCapacity(size);
       this.sql.exec(
         "INSERT INTO attachments (id, role, object_key, filename, media_type, size, sha256, created_at, message_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
         id,
@@ -402,6 +398,15 @@ export class Room implements DurableObject {
 
   private attachmentBytes(): number {
     return [...this.sql.exec<CountRow>("SELECT COALESCE(SUM(size), 0) AS count FROM attachments")][0]?.count ?? 0;
+  }
+
+  private requireAttachmentCapacity(size: number): void {
+    if (this.attachmentCount() >= MAX_ATTACHMENTS_PER_ROOM) {
+      throw new HttpError(413, "room_attachment_count_exceeded", "Room attachment count limit exceeded");
+    }
+    if (this.attachmentBytes() + size > MAX_TOTAL_ATTACHMENT_BYTES) {
+      throw new HttpError(413, "room_attachment_budget_exceeded", "Cumulative room attachment budget exceeded");
+    }
   }
 
   private messagesAfter(after: number): RoomMessage[] {

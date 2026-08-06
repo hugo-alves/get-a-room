@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { createInvite } from "../src/auth";
 import {
   CREATION_RATE_LIMIT_MAX,
+  MAX_ATTACHMENTS_PER_ROOM,
   MAX_FINAL_BYTES,
   MAX_MESSAGE_BYTES,
   MAX_MESSAGES_PER_RESPONSE,
@@ -86,7 +87,10 @@ describe("temporary agent room", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
-    await expect(response.text()).resolves.toContain("Get A Room");
+    const html = await response.text();
+    expect(html).toContain("Get A Room");
+    expect(html).toContain("Return to the agent chat and paste the complete invitation there");
+    expect(html).toContain("Do not open the private invitation URL in a browser");
   });
 
   it("permanently redirects www to the canonical apex domain", async () => {
@@ -103,6 +107,9 @@ describe("temporary agent room", () => {
     expect(room.creator_capability).not.toBe("");
     expect(room.guest_invitation_url).toMatch(/^https:\/\/getaroom\.run\/join#invite=/);
     expect(room.guest_invitation_message).toContain(room.guest_invitation_url);
+    expect(room.guest_invitation_message).toContain("not a web browser");
+    expect(room.guest_invitation_message).toContain("Do not open the private URL");
+    expect(room.guest_invitation_message).toContain("Use the Get A Room skill and follow its guest workflow now");
     expect(Date.parse(room.expires_at)).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
 
     const task = await workerFetch(`/v1/rooms/${room.room_id}/task`, authenticated(room.creator_capability));
@@ -207,6 +214,32 @@ describe("temporary agent room", () => {
     });
     expect(mismatch.status).toBe(400);
     await expect(mismatch.json()).resolves.toMatchObject({ error: "attachment_integrity_failed" });
+  });
+
+  it("keeps concurrent attachment uploads within the room count limit", async () => {
+    const room = await createRoom("Inspect concurrent files");
+    const bytes = new TextEncoder().encode("x");
+    const checksum = await sha256(bytes);
+    const upload = (index: number) => workerFetch(`/v1/rooms/${room.room_id}/attachments`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${room.creator_capability}`,
+        "content-length": String(bytes.byteLength),
+        "content-type": "text/plain",
+        "x-get-a-room-filename": btoa(`file-${index}.txt`).replace(/=+$/u, ""),
+        "x-get-a-room-sha256": checksum,
+      },
+      body: bytes,
+    });
+
+    for (let index = 0; index < MAX_ATTACHMENTS_PER_ROOM - 1; index += 1) {
+      expect((await upload(index)).status).toBe(201);
+    }
+    const competing = await Promise.all([upload(9), upload(10)]);
+    expect(competing.map((response) => response.status).sort()).toEqual([201, 413]);
+
+    const status = await workerFetch(`/v1/rooms/${room.room_id}/status`, authenticated(room.creator_capability));
+    await expect(status.json()).resolves.toMatchObject({ attachment_count: MAX_ATTACHMENTS_PER_ROOM });
   });
 
   it("validates anonymous creation before allocating a room", async () => {
@@ -381,6 +414,8 @@ describe("temporary agent room", () => {
     expect(inviteFromUrl(room.lead_invitation_url)).toBe(room.creator_capability);
     expect(room.lead_invitation_message).toContain(room.lead_invitation_url);
     expect(room.lead_invitation_message).not.toContain(inviteFromUrl(room.guest_invitation_url));
+    expect(room.lead_invitation_message).toContain("Do not open the private URL");
+    expect(room.lead_invitation_message).toContain("use the Get A Room skill and follow the lead workflow now");
 
     const status = await workerFetch(
       `/v1/rooms/${room.room_id}/status`,
@@ -399,6 +434,8 @@ describe("temporary agent room", () => {
     expect(csp).toContain("connect-src 'self'");
     const html = await response.text();
     expect(html).toContain("Read-only live view");
+    expect(html).toContain('crypto.subtle.digest("SHA-256", bytes)');
+    expect(html).toContain("sha256 !== attachment.sha256");
   });
 
   it("returns an observer watch link alongside creator and guest capabilities", async () => {

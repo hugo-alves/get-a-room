@@ -131,6 +131,7 @@ describe("get-a-room", () => {
     const initial = join(home, "brief.txt");
     const midway = join(home, "analysis.csv");
     const downloaded = join(home, "downloaded.csv");
+    const collected = join(home, "final.md");
     await writeFile(task, "Review the files.", "utf8");
     await writeFile(initial, "brief contents", "utf8");
     await writeFile(midway, "answer,42\n", "utf8");
@@ -147,6 +148,9 @@ describe("get-a-room", () => {
       bytes: Buffer;
     }> = [];
     let messageNumber = 0;
+    let collectAttempts = 0;
+    const finalMarkdown = "# Final\n";
+    const finalSha256 = createHash("sha256").update(finalMarkdown).digest("hex");
     const mock = await server((request, response) => {
       void (async () => {
         const origin = `http://${request.headers.host}`;
@@ -195,6 +199,13 @@ describe("get-a-room", () => {
         if (request.method === "GET" && request.url === `/v1/rooms/${ROOM_ID}/attachments`) {
           return send(response, { attachments });
         }
+        if (request.method === "GET" && request.url === `/v1/rooms/${ROOM_ID}/final`) {
+          return send(response, { markdown: finalMarkdown, sha256: finalSha256 });
+        }
+        if (request.method === "POST" && request.url === `/v1/rooms/${ROOM_ID}/collect`) {
+          collectAttempts += 1;
+          return send(response, collectAttempts === 1 ? { error: "temporary_failure" } : { collected: true }, collectAttempts === 1 ? 503 : 200);
+        }
         const downloadMatch = new RegExp(`^/v1/rooms/${ROOM_ID}/attachments/(a_[0-9]+)$`).exec(request.url ?? "");
         if (request.method === "GET" && downloadMatch?.[1]) {
           const attachment = attachments.find((item) => item.id === downloadMatch[1]);
@@ -229,6 +240,13 @@ describe("get-a-room", () => {
       await expect(run([
         "download", "--session", created.session_id, "--attachment", shared.attachment.id, "--out", downloaded, "--json",
       ], home)).rejects.toThrow("Refusing to overwrite existing file");
+
+      await expect(run([
+        "collect", "--session", created.session_id, "--out", collected, "--json",
+      ], home)).rejects.toThrow("HTTP 503");
+      await run(["collect", "--session", created.session_id, "--out", collected, "--json"], home);
+      await expect(readFile(collected, "utf8")).resolves.toBe(finalMarkdown);
+      expect(collectAttempts).toBe(2);
     } finally {
       await mock.close();
     }
