@@ -88,38 +88,55 @@ function joinPage(): Response {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Get A Room</title>
   <style>
-    :root { color-scheme: light; font: 18px/1.55 system-ui, sans-serif; background: #f4f1ea; color: #191713; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
-    main { width: min(36rem, calc(100% - 3rem)); padding: 3rem 0; }
-    h1 { font-size: clamp(2.5rem, 10vw, 5rem); line-height: .95; letter-spacing: -.06em; margin: 0 0 2rem; }
-    p { max-width: 36rem; }
-    .panel { background: #fff; border: 1px solid #e2ddd2; border-radius: .5rem; padding: 1rem 1.25rem; margin: 1rem 0; }
-    .note { color: #6b6459; }
-    .error { color: #a33; font-weight: 600; }
-    textarea { width: 100%; box-sizing: border-box; min-height: 7rem; font: inherit; padding: .6rem; border: 1px solid #d5cfc2; border-radius: .35rem; }
-    button { font: inherit; font-weight: 600; background: #eb5e28; color: #fff; border: 0; border-radius: .35rem; padding: .6rem 1.1rem; cursor: pointer; margin-top: .75rem; }
-    button.secondary { background: #191713; margin-left: .5rem; }
+    :root { color-scheme: light; --paper: #f4f3ee; --ink: #15171c; --blue: #2b4bd7; --muted: #5c6068; --hair: #c9c9c0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--paper); color: var(--ink); font: 17px/1.6 "Avenir Next", Avenir, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    .site-header { border-bottom: 1px solid var(--hair); }
+    .header-inner, main { width: min(760px, calc(100% - 48px)); margin: 0 auto; }
+    .header-inner { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { min-height: 44px; display: inline-flex; align-items: center; color: var(--blue); font-size: 12px; font-weight: 600; letter-spacing: .2em; text-decoration: none; text-transform: uppercase; }
+    .role-guide { min-height: 44px; display: inline-flex; align-items: center; color: var(--muted); font-size: 13px; text-underline-offset: 4px; }
+    main { padding: 72px 0 100px; }
+    .eyebrow { color: var(--blue); font-size: 12px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 12px 0 22px; font: 400 clamp(46px, 9vw, 72px)/.98 "Iowan Old Style", Baskerville, Georgia, serif; letter-spacing: -.035em; }
+    h2 { margin: 28px 0 10px; font: 400 28px/1.1 "Iowan Old Style", Baskerville, Georgia, serif; }
+    p { max-width: 40rem; }
+    #state { color: var(--muted); font-size: 18px; }
+    .panel { margin: 26px 0; padding: 26px; border: 1px solid var(--hair); background: #fff; }
+    .note { color: var(--muted); font-size: 14px; }
+    .error { color: #9f2f22; font-weight: 600; }
+    textarea { width: 100%; min-height: 8rem; padding: 14px; border: 1px solid var(--hair); border-radius: 0; background: #fff; color: var(--ink); font: inherit; }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+    button { min-height: 48px; border: 1px solid var(--ink); border-radius: 0; padding: 0 20px; background: var(--ink); color: var(--paper); cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; }
+    button:hover { border-color: var(--blue); background: var(--blue); }
+    button.secondary { background: transparent; color: var(--ink); }
+    button.secondary:hover { background: var(--ink); color: var(--paper); }
     button:disabled { opacity: .5; cursor: default; }
-    .m { border-left: 4px solid #ccc; padding: .25rem 0 .25rem .85rem; margin: .85rem 0; }
-    .m.creator { border-color: #eb5e28; }
+    button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+    .m { border-left: 3px solid var(--hair); padding: 5px 0 5px 16px; margin: 18px 0; }
+    .m.creator { border-color: var(--blue); }
     .m.guest { border-color: #2a6f97; }
-    .who { font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
-    .m p { white-space: pre-wrap; word-break: break-word; margin: .2rem 0; }
+    .who { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .m p { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
     pre { white-space: pre-wrap; word-break: break-word; }
+    @media (max-width: 520px) { .header-inner, main { width: min(100% - 32px, 760px); } .header-inner { min-height: 68px; } main { padding: 52px 0 80px; } .panel { margin-inline: -16px; padding: 22px 16px; border-inline: 0; } .actions { flex-direction: column; } button { width: 100%; } }
   </style>
 </head>
-<body><main>
-  <h1>Get A Room</h1>
-  <p id="state">Joining the private room…</p>
+<body>
+<header class="site-header"><div class="header-inner"><a class="brand" href="/">Get A Room</a><a class="role-guide" id="role-guide" href="/agents/guest.md">Agent instructions</a></div></header>
+<main>
+  <div class="eyebrow">Private agent door</div>
+  <h1>Enter the room.</h1>
+  <p id="state" role="status" aria-live="polite">Joining the private room…</p>
   <div class="panel" id="room" hidden>
     <p class="note" id="meta"></p>
     <h2>Task</h2><pre id="task"></pre>
     <h2>Messages</h2><div id="messages"></div>
     <label for="message"><strong>Send a message</strong></label>
     <textarea id="message" placeholder="Write your contribution"></textarea>
-    <div><button id="send" type="button">Send</button><button id="check" class="secondary" type="button">Check for messages</button></div>
+    <div class="actions"><button id="send" type="button">Send message</button><button id="check" class="secondary" type="button">Check for messages</button></div>
   </div>
-  <p class="error" id="error" hidden></p>
+  <p class="error" id="error" role="alert" hidden></p>
   <p class="note">The private credential remains in the URL fragment and is sent only in same-origin request bodies. Treat this page like a password while the room is active.</p>
   <script>
   (function () {
@@ -150,7 +167,7 @@ function joinPage(): Response {
       (value.messages || []).forEach(add);
     }
     async function join() {
-      try { var value = await call({ action: "join" }); el("task").textContent = value.task; update(value); clearError(); el("state").textContent = "Connected"; el("room").hidden = false; }
+      try { var value = await call({ action: "join" }); el("task").textContent = value.task; update(value); clearError(); el("state").textContent = "Connected as " + value.role; el("role-guide").setAttribute("href", value.role === "lead" ? "/agents/lead.md" : "/agents/guest.md"); el("room").hidden = false; el("room").setAttribute("aria-label", value.role + " room controls"); el("message").focus(); }
       catch (error) { fail(error instanceof Error ? error.message : "Could not join the room.", "Could not join"); }
     }
     el("send").addEventListener("click", async function () {
@@ -190,69 +207,173 @@ function newRoomPage(): Response {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Get A Room — Start a room</title>
   <style>
-    :root { color-scheme: light; font: 16px/1.55 system-ui, sans-serif; background: #f4f1ea; color: #191713; }
-    body { margin: 0 auto; max-width: 44rem; padding: 2rem 1.5rem 4rem; }
-    h1 { font-size: 2rem; letter-spacing: -.04em; margin: 0; }
-    .sub { color: #6b6459; margin: .25rem 0 1.5rem; }
-    .panel { background: #fff; border: 1px solid #e2ddd2; border-radius: .5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; }
-    label { display: block; font-weight: 600; margin-bottom: .35rem; }
-    textarea { width: 100%; box-sizing: border-box; min-height: 8rem; font: inherit; padding: .6rem; border: 1px solid #d5cfc2; border-radius: .35rem; background: #fdfcf9; }
-    select { font: inherit; padding: .35rem; margin-top: .5rem; }
-    button { font: inherit; font-weight: 600; background: #eb5e28; color: #fff; border: 0; border-radius: .35rem; padding: .6rem 1.1rem; cursor: pointer; margin-top: 1rem; }
-    button:disabled { opacity: .5; cursor: default; }
-    button.copy { background: #191713; margin-top: .5rem; padding: .35rem .8rem; font-size: .85rem; }
-    .who { font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
-    .lead-card { border-left: 4px solid #eb5e28; }
-    .guest-card { border-left: 4px solid #2a6f97; }
-    .watch-card { border-left: 4px solid #6b6459; }
-    pre { white-space: pre-wrap; word-break: break-all; font: .8rem/1.5 ui-monospace, monospace; background: #fdfcf9; border: 1px solid #eee8db; border-radius: .35rem; padding: .6rem; margin: .5rem 0 0; }
-    .note { color: #6b6459; }
-    .error { color: #a33; font-weight: 600; }
-    .warn { border-left: 4px solid #eb5e28; padding-left: 1rem; }
+    :root { color-scheme: light; --paper: #f4f3ee; --ink: #15171c; --blue: #2b4bd7; --muted: #5c6068; --hair: #c9c9c0; --white: #fff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Avenir Next", Avenir, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; }
+    button, textarea, select { font: inherit; }
+    button, a, summary, textarea, select { touch-action: manipulation; }
+    button:focus-visible, a:focus-visible, summary:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+    .site-header { border-bottom: 1px solid var(--hair); }
+    .header-inner, .shell { width: min(960px, calc(100% - 48px)); margin: 0 auto; }
+    .header-inner { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { min-height: 44px; display: inline-flex; align-items: center; color: var(--blue); font-size: 12px; font-weight: 600; letter-spacing: .2em; text-decoration: none; text-transform: uppercase; }
+    .back { min-height: 44px; display: inline-flex; align-items: center; font-size: 13px; text-underline-offset: 4px; }
+    main { padding: 78px 0 110px; }
+    .eyebrow, .who { color: var(--blue); font-size: 12px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { max-width: 11ch; margin: 14px 0 0; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-size: clamp(48px, 8vw, 76px); font-weight: 400; letter-spacing: -.025em; line-height: .98; }
+    .sub { max-width: 40rem; margin: 24px 0 0; color: var(--muted); font-size: 18px; line-height: 1.65; }
+    .primary { margin-top: 50px; padding: 34px; border: 1px solid var(--ink); background: rgba(255,255,255,.44); }
+    .primary-head { display: grid; grid-template-columns: .72fr 1.28fr; gap: 42px; margin-bottom: 28px; }
+    .primary h2, .result h2 { margin: 8px 0 0; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-size: 34px; font-weight: 400; }
+    .primary-copy { margin: 0; color: var(--muted); line-height: 1.7; }
+    .field-grid { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 18px; align-items: end; }
+    label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
+    textarea, select { width: 100%; min-height: 48px; border: 1px solid var(--hair); border-radius: 0; background: var(--white); color: var(--ink); }
+    textarea { min-height: 132px; padding: 14px; line-height: 1.55; resize: vertical; }
+    select { padding: 0 12px; }
+    .actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 20px; }
+    button, .button { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--ink); border-radius: 0; padding: 0 20px; background: var(--ink); color: var(--paper); cursor: pointer; font-size: 14px; font-weight: 600; letter-spacing: .02em; text-decoration: none; }
+    button:hover, .button:hover { border-color: var(--blue); background: var(--blue); }
+    button.secondary, .button.secondary { background: transparent; color: var(--ink); }
+    button.secondary:hover, .button.secondary:hover { background: var(--ink); color: var(--paper); }
+    button:disabled { opacity: .55; cursor: default; }
+    .status, .note { color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .status { min-height: 1.4em; margin: 14px 0 0; }
+    .error { color: #9f2f22; font-weight: 600; }
+    .manual { margin-top: 28px; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+    .manual > summary { min-height: 62px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+    .manual > summary::marker { color: var(--blue); }
+    .manual-inner { padding: 6px 0 36px; }
+    .manual-note { max-width: 42rem; margin: 0 0 24px; color: var(--muted); line-height: 1.65; }
+    .result { margin-top: 54px; scroll-margin-top: 24px; }
+    .result-intro { padding-left: 18px; border-left: 3px solid var(--blue); color: var(--muted); line-height: 1.65; }
+    .handoff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 28px; border: 1px solid var(--hair); background: var(--hair); }
+    .card { min-width: 0; padding: 26px; background: var(--white); }
+    .card h2 { font-size: 28px; }
+    .card .note { min-height: 66px; }
+    .card .actions { align-items: stretch; flex-direction: column; }
+    .card button, .card .button { width: 100%; }
+    .secret { margin-top: 18px; border-top: 1px solid var(--hair); }
+    .secret summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted); font-size: 13px; }
+    pre { max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; padding: 14px; background: var(--paper); font: 12px/1.55 ui-monospace, monospace; }
+    .expiry { margin-top: 22px; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-size: 16px; font-style: italic; }
+    @media (max-width: 760px) {
+      .primary-head, .field-grid, .handoff-grid { grid-template-columns: 1fr; }
+      .primary-head { gap: 18px; }
+      .handoff-grid { gap: 1px; }
+      .card .note { min-height: 0; }
+    }
+    @media (max-width: 520px) {
+      .header-inner, .shell { width: min(100% - 32px, 960px); }
+      .header-inner { min-height: 68px; }
+      main { padding: 54px 0 80px; }
+      .primary { margin-inline: -16px; padding: 28px 16px; border-inline: 0; }
+      .actions { align-items: stretch; flex-direction: column; }
+      .actions button, .actions .button { width: 100%; }
+      .handoff-grid { margin-inline: -16px; border-inline: 0; }
+    }
   </style>
 </head>
 <body>
-  <h1>Start a room</h1>
-  <p class="sub">A temporary, capability-protected room for two agents, with a window for you.</p>
-  <div class="panel" id="form-panel">
-    <label for="task">What should they work on?</label>
-    <textarea id="task" placeholder="Describe the task for the two agents. You can leave this empty and let the lead agent explain it in the room."></textarea>
-    <label for="ttl" style="margin-top:1rem">How long does the room last?</label>
-    <select id="ttl">
-      <option value="3600">1 hour</option>
-      <option value="86400" selected>24 hours</option>
-      <option value="604800">7 days</option>
-    </select>
-    <div><button id="create" type="button">Start the room</button></div>
-    <p class="error" id="error" hidden></p>
-  </div>
-  <div id="result" hidden>
-    <p class="warn"><strong>These three links are the keys to the room.</strong> Anyone with a link gets its powers. Treat them like passwords and share each one only with its intended reader.</p>
-    <div class="panel lead-card">
-      <span class="who">1 · Your agent — the lead</span>
-      <p class="note">Paste this into the agent that should run the room and deliver the final result.</p>
-      <pre id="lead-text"></pre>
-      <button class="copy" type="button" data-copy="lead-text">Copy</button>
-    </div>
-    <div class="panel guest-card">
-      <span class="who">2 · The other agent — the guest</span>
-      <p class="note">Paste this into the helping agent. It can talk, but cannot finalize or close the room.</p>
-      <pre id="guest-text"></pre>
-      <button class="copy" type="button" data-copy="guest-text">Copy</button>
-    </div>
-    <div class="panel watch-card">
-      <span class="who">3 · You — the window</span>
-      <p class="note">Your private read-only live view. <a id="watch-link" href="#">Open the watch page</a> and keep it open.</p>
-      <pre id="watch-text"></pre>
-      <button class="copy" type="button" data-copy="watch-text">Copy</button>
-    </div>
-    <p class="note" id="expiry"></p>
-  </div>
+  <header class="site-header"><div class="header-inner"><a class="brand" href="/">Get A Room</a><a class="back" href="/">Back to the floor plan</a></div></header>
+  <main class="shell">
+    <div class="eyebrow">One task · one handoff</div>
+    <h1>Make the handoff.</h1>
+    <p class="sub">Your lead agent should create the room, keep its own private door, and give you only the guest invitation and observer window.</p>
+
+    <section class="primary" aria-labelledby="agent-first-title">
+      <div class="primary-head">
+        <div><div class="eyebrow">Recommended</div><h2 id="agent-first-title">Start with your lead.</h2></div>
+        <p class="primary-copy">Describe the job once. We’ll copy a concise prompt that points your lead to its reusable instructions—no protocol wall and no lead secret for you to manage.</p>
+      </div>
+      <div class="field-grid">
+        <div><label for="agent-task">What should the agents work on?</label><textarea id="agent-task" placeholder="Describe the outcome, useful context, constraints, and what a good final answer should contain."></textarea></div>
+        <div><label for="agent-ttl">Room lifetime</label><select id="agent-ttl"><option value="1 hour">1 hour</option><option value="24 hours" selected>24 hours</option><option value="7 days">7 days</option></select></div>
+      </div>
+      <div class="actions"><button id="copy-prompt" type="button">Copy prompt for my lead agent</button></div>
+      <p class="status" id="prompt-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <details class="manual">
+      <summary>Create the room manually instead</summary>
+      <div class="manual-inner" id="form-panel">
+        <p class="manual-note">Use this fallback only when your lead agent cannot create a room itself. You’ll receive three private handoff cards.</p>
+        <div class="field-grid">
+          <div><label for="task">What should they work on?</label><textarea id="task" placeholder="Describe the task for the two agents."></textarea></div>
+          <div><label for="ttl">Room lifetime</label><select id="ttl"><option value="3600">1 hour</option><option value="86400" selected>24 hours</option><option value="604800">7 days</option></select></div>
+        </div>
+        <div class="actions"><button id="create" type="button">Create manually</button></div>
+        <p class="status error" id="error" role="alert" hidden></p>
+      </div>
+    </details>
+
+    <section class="result" id="result" tabindex="-1" aria-labelledby="result-title" hidden>
+      <div class="eyebrow">Room ready</div>
+      <h2 id="result-title">Three private handoffs.</h2>
+      <p class="result-intro"><strong>Each link grants one role.</strong> Share each card only with its intended reader. The detailed operating guidance now lives in one stable instruction file per agent.</p>
+      <div class="handoff-grid">
+        <article class="card">
+          <span class="who">01 · Lead door</span><h2>Your lead</h2>
+          <p class="note">Paste this compact invitation into the agent responsible for the final result.</p>
+          <div class="actions"><button type="button" data-copy="lead-text" data-success="Lead invitation copied — paste it into your lead agent">Copy lead invitation</button><a class="button secondary" href="/agents/lead.md">Read lead instructions</a></div>
+          <details class="secret"><summary>View private invitation</summary><pre id="lead-text"></pre></details>
+        </article>
+        <article class="card">
+          <span class="who">02 · Guest door</span><h2>Your helper</h2>
+          <p class="note">Paste this into the helping agent after the lead is in the room.</p>
+          <div class="actions"><button type="button" data-copy="guest-text" data-success="Guest invitation copied — paste it into the helping agent">Copy guest invitation</button><a class="button secondary" href="/agents/guest.md">Read guest instructions</a></div>
+          <details class="secret"><summary>View private invitation</summary><pre id="guest-text"></pre></details>
+        </article>
+        <article class="card">
+          <span class="who">03 · Observer window</span><h2>Your live view</h2>
+          <p class="note">Open the calm, read-only progress view. It cannot send or change anything.</p>
+          <div class="actions"><a class="button" id="watch-link" href="#">Open live view</a><button class="secondary" type="button" data-copy="watch-text" data-success="Observer link copied">Copy observer link</button></div>
+          <details class="secret"><summary>View private link</summary><pre id="watch-text"></pre></details>
+        </article>
+      </div>
+      <p class="status" id="copy-status" role="status" aria-live="polite"></p>
+      <p class="note expiry" id="expiry"></p>
+    </section>
+  </main>
   <script>
   (function () {
     "use strict";
     function el(id) { return document.getElementById(id); }
     var createButton = el("create"), errorEl = el("error");
+
+    function writeClipboard(text, success, button, status) {
+      navigator.clipboard.writeText(text).then(function () {
+        var original = button.textContent;
+        button.textContent = "Copied";
+        status.textContent = success;
+        setTimeout(function () { button.textContent = original; }, 1800);
+      }, function () {
+        status.textContent = "Clipboard access was blocked. Select and copy the text manually.";
+      });
+    }
+
+    el("copy-prompt").addEventListener("click", function () {
+      var task = el("agent-task").value.trim();
+      var status = el("prompt-status");
+      if (!task) {
+        el("agent-task").setAttribute("aria-invalid", "true");
+        status.textContent = "Describe the task first so your lead receives a complete handoff.";
+        el("agent-task").focus();
+        return;
+      }
+      el("agent-task").removeAttribute("aria-invalid");
+      var prompt = [
+        "Create and lead a Get A Room collaboration for the task below.",
+        "Follow the lead instructions at " + location.origin + "/agents/lead.md",
+        "Use a room lifetime of " + el("agent-ttl").value + ".",
+        "Return only the complete guest invitation block and the private observer URL to me. Keep the lead capability and local session details private, coordinate with the guest, then deliver the integrated final result.",
+        "",
+        "Task:",
+        task
+      ].join("\\n");
+      writeClipboard(prompt, "Prompt copied — paste it into the agent that should lead the work.", el("copy-prompt"), status);
+    });
 
     function fail(message) {
       errorEl.textContent = message;
@@ -293,18 +414,14 @@ function newRoomPage(): Response {
       el("expiry").textContent = "The room and all three links expire at " + new Date(room.expires_at).toLocaleString() + ". The room is deleted when the result is collected, when it is closed, or when it expires.";
       el("form-panel").hidden = true;
       el("result").hidden = false;
+      el("result").focus();
     });
 
     document.addEventListener("click", function (event) {
       var target = event.target;
       if (!(target instanceof HTMLElement) || !target.dataset.copy) return;
       var text = el(target.dataset.copy).textContent || "";
-      navigator.clipboard.writeText(text).then(function () {
-        target.textContent = "Copied";
-        setTimeout(function () { target.textContent = "Copy"; }, 1500);
-      }, function () {
-        target.textContent = "Select and copy manually";
-      });
+      writeClipboard(text, target.dataset.success || "Copied", target, el("copy-status"));
     });
   })();
   </script>
@@ -331,44 +448,80 @@ function watchPage(): Response {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Get A Room — Live view</title>
   <style>
-    :root { color-scheme: light; font: 16px/1.55 system-ui, sans-serif; background: #f4f1ea; color: #191713; }
-    body { margin: 0 auto; max-width: 44rem; padding: 2rem 1.5rem 4rem; }
-    h1 { font-size: 2rem; letter-spacing: -.04em; margin: 0; }
-    .sub { color: #6b6459; margin: .25rem 0 1.5rem; }
-    .panel { background: #fff; border: 1px solid #e2ddd2; border-radius: .5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; }
-    .state { font-weight: 600; }
-    .state.over { color: #a33; }
-    .note { color: #6b6459; }
-    details > summary { cursor: pointer; font-weight: 600; }
-    pre { white-space: pre-wrap; word-break: break-word; font: .85rem/1.5 ui-monospace, monospace; margin: .75rem 0 0; }
-    .m { border-left: 4px solid #ccc; padding: .25rem 0 .25rem .85rem; margin: .85rem 0; }
-    .m.creator { border-color: #eb5e28; }
+    :root { color-scheme: light; --paper: #f4f3ee; --ink: #15171c; --blue: #2b4bd7; --muted: #5c6068; --hair: #c9c9c0; --white: #fff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--paper); color: var(--ink); font: 16px/1.6 "Avenir Next", Avenir, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    .site-header { border-bottom: 1px solid var(--hair); }
+    .header-inner, main { width: min(820px, calc(100% - 48px)); margin: 0 auto; }
+    .header-inner { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { min-height: 44px; display: inline-flex; align-items: center; color: var(--blue); font-size: 12px; font-weight: 600; letter-spacing: .2em; text-decoration: none; text-transform: uppercase; }
+    .privacy { color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+    main { padding: 68px 0 100px; }
+    .eyebrow { color: var(--blue); font-size: 12px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 12px 0 0; font: 400 clamp(48px, 8vw, 72px)/.98 "Iowan Old Style", Baskerville, Georgia, serif; letter-spacing: -.03em; }
+    h2 { margin: 0; font: 400 28px/1.15 "Iowan Old Style", Baskerville, Georgia, serif; }
+    .sub { max-width: 38rem; margin: 22px 0 34px; color: var(--muted); font-size: 17px; }
+    .panel { margin-bottom: 16px; padding: 24px; border: 1px solid var(--hair); background: var(--white); }
+    .status-panel { display: grid; grid-template-columns: .8fr 1.2fr; gap: 30px; align-items: start; }
+    .state { display: block; font: 400 32px/1.1 "Iowan Old Style", Baskerville, Georgia, serif; }
+    .state.over { color: #9f2f22; }
+    .note { color: var(--muted); }
+    .meta { margin-top: 10px; font-size: 14px; }
+    .progress { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); list-style: none; border-top: 1px solid var(--hair); }
+    .progress li { min-height: 64px; padding: 12px 10px 0 0; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+    .progress li + li { padding-left: 10px; border-left: 1px solid var(--hair); }
+    .progress .done { color: var(--ink); }
+    .progress .current { color: var(--blue); font-weight: 700; }
+    details > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+    button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+    pre { margin: 12px 0 0; white-space: pre-wrap; word-break: break-word; font: 13px/1.6 ui-monospace, monospace; }
+    .section-label { margin: 36px 0 14px; color: var(--blue); font-size: 12px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; }
+    .m { margin: 0; padding: 18px 0 18px 18px; border-left: 3px solid var(--hair); border-bottom: 1px solid var(--hair); }
+    .m.creator { border-left-color: var(--blue); }
     .m.guest { border-color: #2a6f97; }
-    .m .who { font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
-    .m.creator .who { color: #b84517; }
+    .m .who { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .m.creator .who { color: var(--blue); }
     .m.guest .who { color: #2a6f97; }
-    .m .when { color: #6b6459; font-size: .8rem; margin-left: .5rem; }
-    .m p { margin: .25rem 0 0; white-space: pre-wrap; word-break: break-word; }
-    .file { display: flex; align-items: center; gap: .6rem; margin-top: .5rem; color: #6b6459; font-size: .85rem; }
-    .file button { font: inherit; color: #191713; background: #fff; border: 1px solid #cfc8ba; border-radius: .3rem; padding: .25rem .55rem; cursor: pointer; }
+    .m .when { margin-left: 8px; color: var(--muted); font-size: 12px; }
+    .m p { margin: 5px 0 0; white-space: pre-wrap; word-break: break-word; }
+    .file { display: flex; align-items: center; gap: 10px; margin-top: 9px; color: var(--muted); font-size: 13px; }
+    button, .button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--ink); border-radius: 0; padding: 0 16px; background: var(--ink); color: var(--paper); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; }
+    button:hover, .button:hover { border-color: var(--blue); background: var(--blue); }
+    button.secondary { background: transparent; color: var(--ink); }
+    button.secondary:hover { background: var(--ink); color: var(--paper); }
+    .file button { min-height: 44px; margin-left: auto; }
+    .final-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+    .final-content { margin-top: 16px; padding-top: 18px; border-top: 1px solid var(--hair); }
+    .final-content h3, .final-content h4, .final-content h5 { margin: 22px 0 8px; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-weight: 400; }
+    .final-content h3 { font-size: 28px; } .final-content h4 { font-size: 22px; } .final-content h5 { font-size: 18px; }
+    .final-content p, .final-content ul, .final-content ol { margin: 10px 0; }
+    .final-content code, .final-content pre { padding: 12px; background: var(--paper); }
+    .deletion-note { margin-top: 24px; padding: 16px 18px; border-left: 3px solid #9f2f22; background: rgba(255,255,255,.5); }
+    @media (max-width: 620px) { .status-panel { grid-template-columns: 1fr; } .progress { grid-template-columns: 1fr 1fr; } .progress li:nth-child(3) { border-left: 0; } }
+    @media (max-width: 520px) { .header-inner, main { width: min(100% - 32px, 820px); } .header-inner { min-height: 68px; } main { padding: 52px 0 80px; } .panel { margin-inline: -16px; padding: 22px 16px; border-inline: 0; } .privacy { display: none; } .final-actions { flex-direction: column; } .final-actions button { width: 100%; } }
   </style>
 </head>
 <body>
-  <h1>Get A Room</h1>
-  <p class="sub">Read-only live view. You cannot send messages from this page.</p>
-  <div class="panel">
-    <div><span class="state" id="state">Connecting…</span></div>
-    <div class="note" id="expiry"></div>
-    <div class="note" id="counts"></div>
+  <header class="site-header"><div class="header-inner"><a class="brand" href="/">Get A Room</a><span class="privacy">Private · read only</span></div></header>
+  <main>
+  <div class="eyebrow">Observer window</div>
+  <h1>Watch the work.</h1>
+  <p class="sub">A calm, read-only view of the room. It refreshes automatically; you do not need to manage the agents from here.</p>
+  <div class="panel status-panel">
+    <div><span class="state" id="state" role="status" aria-live="polite">Connecting…</span><div class="note meta" id="expiry"></div><div class="note meta" id="counts"></div></div>
+    <ol class="progress" aria-label="Room progress"><li id="progress-ready">Room ready</li><li id="progress-working">Agents working</li><li id="progress-guest">Guest ready</li><li id="progress-final">Final ready</li></ol>
   </div>
   <div class="panel" id="task-panel" hidden>
     <details><summary>Task</summary><pre id="task"></pre></details>
   </div>
   <div class="panel" id="final-panel" hidden>
-    <details open><summary>Final result</summary><pre id="final"></pre></details>
+    <details open><summary>Final result</summary><div class="final-content" id="final"></div></details>
+    <div class="final-actions"><button type="button" id="copy-final">Copy final</button><button class="secondary" type="button" id="download-final">Download Markdown</button></div>
   </div>
+  <div class="section-label" id="transcript-label" hidden>Room transcript</div>
   <div id="transcript"></div>
-  <p class="note" id="note"></p>
+  <p class="note" id="note" role="status" aria-live="polite"></p>
+  </main>
   <script>
   (function () {
     "use strict";
@@ -392,7 +545,23 @@ function watchPage(): Response {
 
     var base = "/v1/rooms/" + claims.room_id;
     var headers = { authorization: "Bearer " + invite };
-    var lastNumber = 0, haveTask = false, haveFinal = false, over = false, timer = null;
+    var lastNumber = 0, haveTask = false, haveFinal = false, guestReady = false, over = false, timer = null, finalMarkdown = "", currentInfo = null;
+
+    function setProgress(stage) {
+      var ids = ["progress-ready", "progress-working", "progress-guest", "progress-final"];
+      ids.forEach(function (id, index) {
+        el(id).className = index < stage ? "done" : index === stage ? "current" : "";
+      });
+    }
+
+    function updateLifecycle(info) {
+      currentInfo = info;
+      var stage = info.status === "finalized" || info.has_final ? 3 : guestReady ? 2 : info.message_count > 0 ? 1 : 0;
+      var labels = ["Room ready", "Agents working", "Guest ready — lead finalizing", "Final ready"];
+      stateEl.textContent = labels[stage];
+      stateEl.className = "state";
+      setProgress(stage);
+    }
 
     function finish(state, note) {
       over = true;
@@ -400,6 +569,69 @@ function watchPage(): Response {
       stateEl.textContent = state;
       stateEl.className = "state over";
       noteEl.textContent = note;
+      noteEl.className = "note deletion-note";
+    }
+
+    function renderMarkdown(markdown) {
+      var root = el("final");
+      root.replaceChildren();
+      var lines = markdown.replace(/\\r\\n?/g, "\\n").split("\\n");
+      var index = 0;
+      while (index < lines.length) {
+        var line = lines[index];
+        if (!line || !line.trim()) { index += 1; continue; }
+        if (line.indexOf("\x60\x60\x60") === 0) {
+          var codeLines = [];
+          index += 1;
+          while (index < lines.length && lines[index].indexOf("\x60\x60\x60") !== 0) { codeLines.push(lines[index]); index += 1; }
+          if (index < lines.length) index += 1;
+          var pre = document.createElement("pre");
+          var code = document.createElement("code");
+          code.textContent = codeLines.join("\\n");
+          pre.appendChild(code);
+          root.appendChild(pre);
+          continue;
+        }
+        var heading = /^(#{1,3})\\s+(.+)$/.exec(line);
+        if (heading) {
+          var headingNode = document.createElement("h" + (heading[1].length + 2));
+          headingNode.textContent = heading[2];
+          root.appendChild(headingNode);
+          index += 1;
+          continue;
+        }
+        if (/^[-*]\\s+/.test(line)) {
+          var unordered = document.createElement("ul");
+          while (index < lines.length && /^[-*]\\s+/.test(lines[index])) {
+            var item = document.createElement("li");
+            item.textContent = lines[index].replace(/^[-*]\\s+/, "");
+            unordered.appendChild(item);
+            index += 1;
+          }
+          root.appendChild(unordered);
+          continue;
+        }
+        if (/^\\d+\\.\\s+/.test(line)) {
+          var ordered = document.createElement("ol");
+          while (index < lines.length && /^\\d+\\.\\s+/.test(lines[index])) {
+            var orderedItem = document.createElement("li");
+            orderedItem.textContent = lines[index].replace(/^\\d+\\.\\s+/, "");
+            ordered.appendChild(orderedItem);
+            index += 1;
+          }
+          root.appendChild(ordered);
+          continue;
+        }
+        var paragraphLines = [line.trim()];
+        index += 1;
+        while (index < lines.length && lines[index].trim() && !/^(#{1,3})\\s+|^[-*]\\s+|^\\d+\\.\\s+/.test(lines[index])) {
+          paragraphLines.push(lines[index].trim());
+          index += 1;
+        }
+        var paragraph = document.createElement("p");
+        paragraph.textContent = paragraphLines.join(" ");
+        root.appendChild(paragraph);
+      }
     }
 
     function addMessage(message) {
@@ -407,7 +639,7 @@ function watchPage(): Response {
       wrap.className = "m " + (message.role === "creator" ? "creator" : "guest");
       var who = document.createElement("span");
       who.className = "who";
-      who.textContent = message.role === "creator" ? "Creator" : "Guest";
+      who.textContent = message.role === "creator" ? "Lead" : "Guest";
       var when = document.createElement("span");
       when.className = "when";
       if (message.created_at) when.textContent = new Date(message.created_at).toLocaleString();
@@ -416,6 +648,7 @@ function watchPage(): Response {
       wrap.appendChild(who);
       wrap.appendChild(when);
       wrap.appendChild(text);
+      if (message.role === "guest" && /^READY\\b/i.test(String(message.text || "").trim())) guestReady = true;
       var attachments = Array.isArray(message.attachments) ? message.attachments : [];
       attachments.forEach(function (attachment) {
         var file = document.createElement("div");
@@ -452,6 +685,8 @@ function watchPage(): Response {
         wrap.appendChild(file);
       });
       el("transcript").appendChild(wrap);
+      el("transcript-label").hidden = false;
+      if (currentInfo) updateLifecycle(currentInfo);
     }
 
     function get(path) { return fetch(base + path, { headers: headers }); }
@@ -465,13 +700,15 @@ function watchPage(): Response {
         noteEl.textContent = "Connection lost. Retrying…";
         return;
       }
-      if (status.status === 401) return finish("Link expired", "This observer link is no longer valid.");
-      if (status.status === 410) return finish("Room over", "The room was collected, closed, or expired. Its data has been deleted.");
+      if (status.status === 401) return finish("Link expired", "This observer link is no longer valid. Any content already visible here is only an unsaved in-tab copy.");
+      if (status.status === 410) return finish("Room deleted", haveFinal
+        ? "The backend room and files have been deleted. This page is showing only an unsaved in-tab copy; copy or download the final result before refreshing."
+        : "The backend room and files have been deleted. Any content still visible is only an unsaved in-tab copy and will disappear when you refresh.");
       if (!status.ok) { noteEl.textContent = "Temporary error. Retrying…"; return; }
       var info = await status.json();
       noteEl.textContent = "";
-      stateEl.textContent = info.status === "open" ? "Live" : "Finalized";
-      stateEl.className = "state";
+      noteEl.className = "note";
+      updateLifecycle(info);
       expiryEl.textContent = "Room expires " + new Date(info.expires_at).toLocaleString();
       countsEl.textContent = info.message_count + " message" + (info.message_count === 1 ? "" : "s") +
         " · " + (info.attachment_count || 0) + " file" + (info.attachment_count === 1 ? "" : "s");
@@ -499,13 +736,35 @@ function watchPage(): Response {
         var final = await get("/final");
         if (final.ok) {
           var finalBody = await final.json();
-          el("final").textContent = finalBody.markdown;
+          finalMarkdown = finalBody.markdown;
+          renderMarkdown(finalMarkdown);
           el("final-panel").hidden = false;
           haveFinal = true;
+          updateLifecycle(info);
         }
       }
     }
 
+    el("copy-final").addEventListener("click", function () {
+      navigator.clipboard.writeText(finalMarkdown).then(function () {
+        noteEl.textContent = "Final result copied.";
+      }, function () {
+        noteEl.textContent = "Clipboard access was blocked. Select the final result and copy it manually.";
+      });
+    });
+
+    el("download-final").addEventListener("click", function () {
+      var blob = new Blob([finalMarkdown], { type: "text/markdown;charset=utf-8" });
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement("a");
+      link.href = url;
+      link.download = "get-a-room-final.md";
+      link.click();
+      URL.revokeObjectURL(url);
+      noteEl.textContent = "Final Markdown downloaded.";
+    });
+
+    setProgress(0);
     tick();
     timer = setInterval(tick, 4000);
   })();
@@ -779,26 +1038,15 @@ function publicBaseUrl(request: Request, env: Env): string {
 }
 
 function leadInvitationMessage(leadInviteUrl: string, expiresAt: string): string {
-  const endpoint = `${new URL(leadInviteUrl).origin}/v1/agent`;
-  const withInvite = (action: string, fields: Record<string, unknown> = {}): string =>
-    JSON.stringify({ action, invitation: leadInviteUrl, ...fields });
+  const origin = new URL(leadInviteUrl).origin;
   return [
-    "Get A Room lead invitation",
+    "Get A Room — lead invitation",
     "",
-    "Give this entire invitation to YOUR agent. The lead runs the room and owns the final result.",
-    "No skill, plugin, or CLI is required. POST to the endpoint below with Content-Type: application/json. Start with this complete, copy-ready body:",
-    endpoint,
-    withInvite("join"),
-    "Available request bodies:",
-    withInvite("say", { text: "your message" }),
-    withInvite("check", { after: 0, wait_seconds: 5 }),
-    withInvite("finish", { markdown: "final Markdown" }),
-    withInvite("final"),
-    withInvite("collect", { sha256: "SHA-256 returned by final" }),
-    withInvite("close"),
-    "You may instead open the private URL in a browser to join and collaborate.",
+    `Instructions: ${origin}/agents/lead.md`,
+    `Private invitation: ${leadInviteUrl}`,
     "",
-    `The URL carries the private lead credential. It can also finalize and close the room, expires at ${expiresAt}, and must be treated like a password.`,
+    `Expires: ${expiresAt}`,
+    "Follow the lead instructions. Keep the invitation private and return only the guest invitation plus observer URL to the human.",
   ].join("\n");
 }
 
@@ -814,22 +1062,15 @@ function observerMessage(observerUrl: string, expiresAt: string): string {
 }
 
 function invitationMessage(guestInviteUrl: string, expiresAt: string): string {
-  const endpoint = `${new URL(guestInviteUrl).origin}/v1/agent`;
-  const withInvite = (action: string, fields: Record<string, unknown> = {}): string =>
-    JSON.stringify({ action, invitation: guestInviteUrl, ...fields });
+  const origin = new URL(guestInviteUrl).origin;
   return [
-    "Get A Room invitation",
+    "Get A Room — guest invitation",
     "",
-    "You have been invited to collaborate as the guest agent.",
-    "No skill, plugin, or CLI is required. POST to the endpoint below with Content-Type: application/json. Start with this complete, copy-ready body:",
-    endpoint,
-    withInvite("join"),
-    "Available request bodies:",
-    withInvite("say", { text: "your message" }),
-    withInvite("check", { after: 0, wait_seconds: 5 }),
-    "You may instead open the private URL in a browser to join and collaborate.",
+    `Instructions: ${origin}/agents/guest.md`,
+    `Private invitation: ${guestInviteUrl}`,
     "",
-    `The URL carries your private guest credential. It expires at ${expiresAt}. Treat it like a password.`,
+    `Expires: ${expiresAt}`,
+    "Follow the guest instructions and keep the invitation private.",
   ].join("\n");
 }
 

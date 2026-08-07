@@ -117,11 +117,9 @@ describe("temporary agent room", () => {
     expect(room.creator_capability).not.toBe("");
     expect(room.guest_invitation_url).toMatch(/^https:\/\/getaroom\.run\/join#invite=/);
     expect(room.guest_invitation_message).toContain(room.guest_invitation_url);
-    expect(room.guest_invitation_message).toContain("No skill, plugin, or CLI is required");
-    expect(room.guest_invitation_message).toContain("https://getaroom.run/v1/agent");
-    expect(room.guest_invitation_message).toContain("open the private URL in a browser");
-    expect(room.guest_invitation_message).toContain(JSON.stringify({ action: "join", invitation: room.guest_invitation_url }));
-    expect(room.guest_invitation_message).not.toContain("<the complete private URL below>");
+    expect(room.guest_invitation_message).toContain("https://getaroom.run/agents/guest.md");
+    expect(room.guest_invitation_message.split(room.guest_invitation_url)).toHaveLength(2);
+    expect(room.guest_invitation_message.length).toBeLessThan(1_000);
     expect(Date.parse(room.expires_at)).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
 
     const task = await workerFetch(`/v1/rooms/${room.room_id}/task`, authenticated(room.creator_capability));
@@ -521,7 +519,10 @@ describe("temporary agent room", () => {
     const csp = response.headers.get("content-security-policy") ?? "";
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("connect-src 'self'");
-    await expect(response.text()).resolves.toContain("Start the room");
+    const html = await response.text();
+    expect(html).toContain("Copy prompt for my lead agent");
+    expect(html).toContain("Create the room manually instead");
+    expect(html).toContain('aria-live="polite"');
   });
 
   it("serves the landing page and its room-plan image", async () => {
@@ -554,11 +555,9 @@ describe("temporary agent room", () => {
     expect(inviteFromUrl(room.lead_invitation_url)).toBe(room.creator_capability);
     expect(room.lead_invitation_message).toContain(room.lead_invitation_url);
     expect(room.lead_invitation_message).not.toContain(inviteFromUrl(room.guest_invitation_url));
-    expect(room.lead_invitation_message).toContain("No skill, plugin, or CLI is required");
-    expect(room.lead_invitation_message).toContain("https://getaroom.run/v1/agent");
-    expect(room.lead_invitation_message).toContain("open the private URL in a browser");
-    expect(room.lead_invitation_message).toContain(JSON.stringify({ action: "join", invitation: room.lead_invitation_url }));
-    expect(room.lead_invitation_message).toContain(JSON.stringify({ action: "close", invitation: room.lead_invitation_url }));
+    expect(room.lead_invitation_message).toContain("https://getaroom.run/agents/lead.md");
+    expect(room.lead_invitation_message.split(room.lead_invitation_url)).toHaveLength(2);
+    expect(room.lead_invitation_message.length).toBeLessThan(1_000);
 
     const status = await workerFetch(
       `/v1/rooms/${room.room_id}/status`,
@@ -576,14 +575,17 @@ describe("temporary agent room", () => {
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("connect-src 'self'");
     const html = await response.text();
-    expect(html).toContain("Read-only live view");
+    expect(html).toContain("Observer window");
+    expect(html).toContain("Copy final");
+    expect(html).toContain("Room deleted");
+    expect(html).toContain('message.role === "creator" ? "Lead" : "Guest"');
     expect(html).toContain('crypto.subtle.digest("SHA-256", bytes)');
     expect(html).toContain("sha256 !== attachment.sha256");
   });
 
   it("returns an observer watch link alongside creator and guest capabilities", async () => {
     const room = await createRoom();
-    expect(room.guest_invitation_message).toContain("You have been invited to collaborate as the guest agent.");
+    expect(room.guest_invitation_message).toContain("Get A Room — guest invitation");
     expect(room.observer_url).toMatch(/^https:\/\/getaroom\.run\/watch#invite=/);
     expect(room.observer_message).toContain(room.observer_url);
     expect(room.observer_message).not.toContain(room.creator_capability);

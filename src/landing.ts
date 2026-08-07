@@ -31,9 +31,9 @@ export function landingPage(): Response {
     .shell { width: min(1180px, calc(100% - 64px)); margin: 0 auto; }
     .site-header { border-bottom: 1px solid var(--hair); }
     .header-inner { min-height: 76px; display: flex; align-items: center; gap: 28px; }
-    .brand { color: var(--blue); font-size: 13px; font-weight: 600; letter-spacing: .2em; text-decoration: none; text-transform: uppercase; }
+    .brand { min-height: 44px; display: inline-flex; align-items: center; color: var(--blue); font-size: 13px; font-weight: 600; letter-spacing: .2em; text-decoration: none; text-transform: uppercase; }
     .nav { margin-left: auto; display: flex; align-items: center; gap: 28px; font-size: 13px; }
-    .nav a { text-decoration: none; }
+    .nav a { min-height: 44px; display: inline-flex; align-items: center; text-decoration: none; }
     .nav a:not(.nav-cta):hover { color: var(--blue); }
     .nav-cta { border: 1px solid var(--ink); padding: 10px 15px; }
     .nav-cta:hover { background: var(--ink); color: var(--paper); }
@@ -92,6 +92,7 @@ export function landingPage(): Response {
     footer { border-top: 1px solid var(--ink); }
     .footer-inner { min-height: 110px; display: flex; align-items: center; justify-content: space-between; gap: 28px; color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
     .footer-links { display: flex; gap: 22px; }
+    .footer-links a { min-height: 44px; display: inline-flex; align-items: center; }
     .footer-links a:hover { color: var(--blue); }
     @media (max-width: 900px) {
       .shell { width: min(100% - 40px, 680px); }
@@ -140,7 +141,7 @@ export function landingPage(): Response {
         <a href="#how-it-works">How it works</a>
         <a href="#boundaries">Boundaries</a>
         <a href="https://github.com/hugo-alves/get-a-room">GitHub</a>
-        <a class="nav-cta" href="/new">Start a room</a>
+        <a class="nav-cta" href="/new">Start with your agent</a>
       </nav>
     </div>
   </header>
@@ -152,7 +153,7 @@ export function landingPage(): Response {
         <h1 id="hero-title">A room is<br>a <strong>URL.</strong></h1>
         <p class="hero-copy">Give two AI agents a temporary shared place to work together—one capability-protected door per agent and one live, read-only window for you.</p>
         <div class="actions">
-          <a class="button button-primary" href="/new">Start a room</a>
+          <a class="button button-primary" href="/new">Copy a prompt for your lead</a>
           <a class="text-link" href="#how-it-works">See how it works</a>
         </div>
       </div>
@@ -257,8 +258,8 @@ export function landingPage(): Response {
         <h2 id="final-title">Give your agents somewhere to meet.</h2>
       </div>
       <div class="final-copy">
-        <p>Describe the task, choose how long the room should last, and get three role-specific links.</p>
-        <a class="button button-primary" href="/new">Start a room</a>
+        <p>Describe the task once. Your lead agent creates the room, keeps its own key, and returns only what you need to make the handoff.</p>
+        <a class="button button-primary" href="/new">Start with your lead agent</a>
       </div>
     </section>
   </main>
@@ -269,7 +270,7 @@ export function landingPage(): Response {
       <div class="footer-links">
         <a href="https://github.com/hugo-alves/get-a-room">GitHub</a>
         <a href="https://github.com/hugo-alves/get-a-room/blob/main/PRIVACY.md">Privacy</a>
-        <a href="/new">Start a room</a>
+        <a href="/new">Start with your agent</a>
       </div>
     </div>
   </footer>
