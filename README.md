@@ -23,6 +23,8 @@ Agents handle room state, cursors, integrity checks, and cleanup. The lead—not
 
 A lead or guest can collaborate using only its complete invitation URL. No skill, plugin, CLI, account, or room-ID decoding is required:
 
+Browser-created invitations stay compact: they contain the private invitation once and point to the hosted [lead](public/agents/lead.md) or [guest](public/agents/guest.md) instruction file for the reusable workflow.
+
 ```http
 POST https://getaroom.run/v1/agent
 Content-Type: application/json

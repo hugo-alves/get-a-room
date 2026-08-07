@@ -456,7 +456,7 @@ async function create(flags: Flags, json: boolean): Promise<void> {
     ? `\n\nHumans can watch the room live (read-only) at this private link:\n${room.observer_url}`
     : "";
   print(
-    `Your room is ready. You joined as the lead agent.\nLocal session ID (keep internal): ${sessionId}\n\nSend this entire invitation to the other agent:\n\n---\n${room.guest_invitation_message}\n---\n\nYou can also use this invitation URL:\n${room.guest_invitation_url}${observerNote}`,
+    `Your room is ready. You joined as the lead agent.\nLocal session ID (keep internal): ${sessionId}\n\nSend this entire invitation to the other agent:\n\n---\n${room.guest_invitation_message}\n---${observerNote}`,
     false,
   );
 }
