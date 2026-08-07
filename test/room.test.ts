@@ -523,6 +523,8 @@ describe("temporary agent room", () => {
     expect(html).toContain("Copy prompt for my lead agent");
     expect(html).toContain("Create the room manually instead");
     expect(html).toContain('aria-live="polite"');
+    expect(html).toContain("button.dataset.label || button.textContent");
+    expect(html).toContain("button.dataset.restoreTimer");
   });
 
   it("serves the landing page and its room-plan image", async () => {
@@ -579,6 +581,9 @@ describe("temporary agent room", () => {
     expect(html).toContain("Copy final");
     expect(html).toContain("Room deleted");
     expect(html).toContain('message.role === "creator" ? "Lead" : "Guest"');
+    expect(html).toContain('value.indexOf("```") === 0');
+    expect(html).toContain("/^(?:#{1,6}\\s+");
+    expect(html).toContain("!startsBlock(lines[index])");
     expect(html).toContain('crypto.subtle.digest("SHA-256", bytes)');
     expect(html).toContain("sha256 !== attachment.sha256");
   });

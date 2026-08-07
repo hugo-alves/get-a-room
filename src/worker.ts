@@ -343,11 +343,16 @@ function newRoomPage(): Response {
     var createButton = el("create"), errorEl = el("error");
 
     function writeClipboard(text, success, button, status) {
+      var original = button.dataset.label || button.textContent;
+      button.dataset.label = original;
       navigator.clipboard.writeText(text).then(function () {
-        var original = button.textContent;
+        if (button.dataset.restoreTimer) clearTimeout(Number(button.dataset.restoreTimer));
         button.textContent = "Copied";
         status.textContent = success;
-        setTimeout(function () { button.textContent = original; }, 1800);
+        button.dataset.restoreTimer = String(setTimeout(function () {
+          button.textContent = original;
+          delete button.dataset.restoreTimer;
+        }, 1800));
       }, function () {
         status.textContent = "Clipboard access was blocked. Select and copy the text manually.";
       });
@@ -492,8 +497,8 @@ function watchPage(): Response {
     .file button { min-height: 44px; margin-left: auto; }
     .final-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
     .final-content { margin-top: 16px; padding-top: 18px; border-top: 1px solid var(--hair); }
-    .final-content h3, .final-content h4, .final-content h5 { margin: 22px 0 8px; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-weight: 400; }
-    .final-content h3 { font-size: 28px; } .final-content h4 { font-size: 22px; } .final-content h5 { font-size: 18px; }
+    .final-content h3, .final-content h4, .final-content h5, .final-content h6 { margin: 22px 0 8px; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-weight: 400; }
+    .final-content h3 { font-size: 28px; } .final-content h4 { font-size: 22px; } .final-content h5 { font-size: 18px; } .final-content h6 { font-size: 16px; }
     .final-content p, .final-content ul, .final-content ol { margin: 10px 0; }
     .final-content code, .final-content pre { padding: 12px; background: var(--paper); }
     .deletion-note { margin-top: 24px; padding: 16px 18px; border-left: 3px solid #9f2f22; background: rgba(255,255,255,.5); }
@@ -576,6 +581,9 @@ function watchPage(): Response {
       var root = el("final");
       root.replaceChildren();
       var lines = markdown.replace(/\\r\\n?/g, "\\n").split("\\n");
+      function startsBlock(value) {
+        return value.indexOf("\x60\x60\x60") === 0 || /^(?:#{1,6}\\s+|[-*]\\s+|\\d+\\.\\s+)/.test(value);
+      }
       var index = 0;
       while (index < lines.length) {
         var line = lines[index];
@@ -592,9 +600,9 @@ function watchPage(): Response {
           root.appendChild(pre);
           continue;
         }
-        var heading = /^(#{1,3})\\s+(.+)$/.exec(line);
+        var heading = /^(#{1,6})\\s+(.+)$/.exec(line);
         if (heading) {
-          var headingNode = document.createElement("h" + (heading[1].length + 2));
+          var headingNode = document.createElement("h" + Math.min(heading[1].length + 2, 6));
           headingNode.textContent = heading[2];
           root.appendChild(headingNode);
           index += 1;
@@ -624,7 +632,7 @@ function watchPage(): Response {
         }
         var paragraphLines = [line.trim()];
         index += 1;
-        while (index < lines.length && lines[index].trim() && !/^(#{1,3})\\s+|^[-*]\\s+|^\\d+\\.\\s+/.test(lines[index])) {
+        while (index < lines.length && lines[index].trim() && !startsBlock(lines[index])) {
           paragraphLines.push(lines[index].trim());
           index += 1;
         }
