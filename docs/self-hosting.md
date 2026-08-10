@@ -13,7 +13,7 @@ pnpm wrangler dev --config wrangler.self-host.jsonc
 Copy `.dev.vars.example` to the ignored `.dev.vars` path, then replace the placeholder with a unique signing secret of at least 32 random bytes:
 
 ```bash
-cp .dev.vars.example .dev.vars
+install -m 600 .dev.vars.example .dev.vars
 ```
 
 Use `http://127.0.0.1:8787` only for loopback development.

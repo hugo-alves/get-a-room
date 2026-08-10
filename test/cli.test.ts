@@ -182,4 +182,18 @@ describe("roomctl", () => {
       await server.close();
     }
   });
+
+  it("neutralizes terminal and bidi controls in human-readable output", async () => {
+    const server = await mockServer((_request, response) => {
+      json(response, 200, { messages: [{ role: "guest", text: "safe\u009b31m\u202eforged" }] });
+    });
+    try {
+      const result = await runCli(["read", "--base-url", server.baseUrl, "--invite", INVITE]);
+      expect(result.stdout).not.toContain("\u009b");
+      expect(result.stdout).not.toContain("\u202e");
+      expect(result.stdout).toContain("safe�31m�forged");
+    } finally {
+      await server.close();
+    }
+  });
 });

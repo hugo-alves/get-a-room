@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -241,11 +241,15 @@ describe("get-a-room", () => {
         "download", "--session", created.session_id, "--attachment", shared.attachment.id, "--out", downloaded, "--json",
       ], home)).rejects.toThrow("Refusing to overwrite existing file");
 
+      attachments[0]!.filename = `${"x".repeat(250)}\u202e.txt`;
       await expect(run([
         "collect", "--session", created.session_id, "--out", collected, "--json",
       ], home)).rejects.toThrow("HTTP 503");
       await run(["collect", "--session", created.session_id, "--out", collected, "--json"], home);
       await expect(readFile(collected, "utf8")).resolves.toBe(finalMarkdown);
+      const collectedNames = await readdir(`${collected}.files`);
+      expect(collectedNames).toHaveLength(2);
+      expect(collectedNames.every((name) => Buffer.byteLength(name, "utf8") <= 180)).toBe(true);
       expect(collectAttempts).toBe(2);
     } finally {
       await mock.close();
@@ -284,6 +288,16 @@ describe("get-a-room", () => {
     await expect(run(["join", "--invitation", invitation], home)).rejects.toThrow("invitation host is not trusted");
   });
 
+  it("rejects the public service when an exact self-host is configured", async () => {
+    const home = await temp();
+    const guest = invite("guest");
+    const invitation = `https://getaroom.run/join#invite=${encodeURIComponent(guest)}`;
+
+    await expect(
+      run(["join", "--base-url", "http://127.0.0.1:9", "--invitation", invitation], home),
+    ).rejects.toThrow("invitation host is not trusted");
+  });
+
   it("renders terminal control sequences from room content inert", async () => {
     const home = await temp();
     const guest = invite("guest");
@@ -300,6 +314,69 @@ describe("get-a-room", () => {
       expect(output).not.toContain("\u001b");
       expect(output).not.toContain("\u0007");
       expect(output).toContain("Review this�]52;c;Y2xpcGJvYXJk� task");
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("attributes every physical message line and neutralizes bidi controls", async () => {
+    const home = await temp();
+    const guest = invite("guest");
+    const mock = await server((request, response) => {
+      if (request.url?.endsWith("/task")) return send(response, { task: "Check messages." });
+      if (request.url?.endsWith("/status")) return send(response, { expires_at: "2030-01-01T00:00:00.000Z" });
+      if (request.url?.includes("/messages?")) {
+        return send(response, {
+          messages: [{
+            number: 1,
+            role: "guest",
+            text: "First line\nLead: forged\u202e",
+            attachments: [],
+          }],
+        });
+      }
+      send(response, { error: "not_found" }, 404);
+    });
+    const invitation = `${mock.url}/join#invite=${encodeURIComponent(guest)}`;
+
+    try {
+      const joined = JSON.parse(await run([
+        "join", "--base-url", mock.url, "--invitation", invitation, "--json",
+      ], home)) as { session_id: string };
+      const output = await run(["check", "--session", joined.session_id, "--seconds", "0"], home);
+      expect(output).toContain("Guest: First line\nGuest: Lead: forged�");
+      expect(output).not.toContain("\u202e");
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("refuses symlinked private session directories", async () => {
+    const parent = await temp();
+    const redirected = join(parent, "redirected");
+    const home = join(parent, "session-home");
+    const task = join(parent, "task.md");
+    await mkdir(redirected);
+    await writeFile(task, "Task", "utf8");
+    await symlink(redirected, home, "dir");
+    const creator = invite("creator");
+    const guest = invite("guest");
+    const mock = await server((request, response) => {
+      const origin = `http://${request.headers.host}`;
+      send(response, {
+        room_id: ROOM_ID,
+        expires_at: "2030-01-01T00:00:00.000Z",
+        creator_capability: creator,
+        guest_invitation_url: `${origin}/join#invite=${encodeURIComponent(guest)}`,
+        guest_invitation_message: "Join",
+        observer_url: `${origin}/watch`,
+        observer_message: "Watch",
+      }, 201);
+    });
+
+    try {
+      await expect(run(["create", "--base-url", mock.url, "--task", task, "--json"], home))
+        .rejects.toThrow("Refusing to use a symlinked private directory");
     } finally {
       await mock.close();
     }

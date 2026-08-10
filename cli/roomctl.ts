@@ -247,9 +247,35 @@ function pretty(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+function safeTerminalText(value: string): string {
+  let output = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    const unsafe =
+      codePoint <= 8 ||
+      (codePoint >= 11 && codePoint <= 31) ||
+      (codePoint >= 127 && codePoint <= 159) ||
+      (codePoint >= 0x202a && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x2069);
+    output += unsafe ? "�" : character;
+  }
+  return output;
+}
+
+function terminalSafeValue(value: unknown): unknown {
+  if (typeof value === "string") return safeTerminalText(value);
+  if (Array.isArray(value)) return value.map(terminalSafeValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [safeTerminalText(key), terminalSafeValue(item)]),
+    );
+  }
+  return value;
+}
+
 function output(value: unknown, json: boolean): void {
   if (json) printJson(value);
-  else pretty(value);
+  else pretty(terminalSafeValue(value));
 }
 
 async function createRoom(flags: Flags, json: boolean): Promise<void> {
