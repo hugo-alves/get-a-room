@@ -83,6 +83,18 @@ async function sha256(value: Uint8Array): Promise<string> {
 }
 
 describe("temporary agent room", () => {
+  it("rejects the shipped placeholder signing secret", async () => {
+    await expect(
+      createInvite(
+        "replace-with-a-long-random-local-value",
+        "0123456789abcdef0123456789abcdef",
+        "guest",
+        1,
+        2,
+      ),
+    ).rejects.toThrow("must not use the example placeholder");
+  });
+
   it("serves a minimal health endpoint", async () => {
     const response = await workerFetch("/healthz");
     expect(response.status).toBe(200);

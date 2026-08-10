@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, link, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 type FlagValue = string | boolean;
@@ -259,8 +259,9 @@ function parseInvitation(value: string, flags: Flags): { base_url: string; invit
   if (!invite) throw new CommandError("The Get A Room invitation is missing its private capability");
   const basePath = url.pathname.slice(0, -"/join".length).replace(/\/$/u, "");
   const invitationBaseUrl = `${url.origin}${basePath}`;
-  const trustedBaseUrls = new Set([DEFAULT_BASE_URL, baseUrl(flags)]);
-  if (!trustedBaseUrls.has(invitationBaseUrl)) {
+  const configuredBaseUrl = flag(flags, "base-url") ?? process.env.GET_A_ROOM_URL ?? process.env.ROOM_BASE_URL;
+  const trustedBaseUrl = configuredBaseUrl === undefined ? DEFAULT_BASE_URL : baseUrl(flags);
+  if (invitationBaseUrl !== trustedBaseUrl) {
     throw new CommandError("The invitation host is not trusted; configure its exact address with --base-url or GET_A_ROOM_URL");
   }
   return { base_url: invitationBaseUrl, invite };
@@ -270,9 +271,24 @@ function sessionHome(): string {
   return resolve(process.env.GET_A_ROOM_HOME ?? join(process.cwd(), ".get-a-room"));
 }
 
+async function ensurePrivateDirectory(path: string): Promise<void> {
+  try {
+    const info = await lstat(path);
+    if (info.isSymbolicLink()) throw new CommandError(`Refusing to use a symlinked private directory: ${path}`);
+    if (!info.isDirectory()) throw new CommandError(`The private session path is not a directory: ${path}`);
+  } catch (error) {
+    if (!(isRecord(error) && error.code === "ENOENT")) throw error;
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    const info = await lstat(path);
+    if (info.isSymbolicLink() || !info.isDirectory()) {
+      throw new CommandError(`Refusing to use an unsafe private directory: ${path}`);
+    }
+  }
+  await chmod(path, 0o700);
+}
+
 async function writePrivate(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await chmod(dirname(path), 0o700);
+  await ensurePrivateDirectory(dirname(path));
   const temporary = `${path}.${process.pid}.${randomBytes(5).toString("hex")}.tmp`;
   const handle = await open(temporary, "wx", 0o600);
   try {
@@ -290,6 +306,8 @@ function sessionIdIsValid(value: string): boolean {
 
 async function saveSession(session: Session): Promise<string> {
   const home = sessionHome();
+  await ensurePrivateDirectory(home);
+  await ensurePrivateDirectory(join(home, "sessions"));
   const sessionId = session.session_id ?? `s_${randomBytes(12).toString("hex")}`;
   session.session_id = sessionId;
   await writePrivate(join(home, "sessions", `${sessionId}.json`), `${JSON.stringify(session, null, 2)}\n`);
@@ -578,7 +596,7 @@ async function share(flags: Flags, json: boolean): Promise<void> {
   const session = await loadSession(flags);
   const path = required(flags, "file");
   const attachment = await uploadAndAttach(session, path, flag(flags, "text") ?? `Shared file: ${basename(path)}`);
-  print(json ? { shared: true, attachment } : `Shared ${attachment.filename} (${attachment.id}).`, json);
+  print(json ? { shared: true, attachment } : `Shared ${safeTerminalText(attachment.filename)} (${attachment.id}).`, json);
 }
 
 function seconds(flags: Flags): number {
@@ -587,6 +605,14 @@ function seconds(flags: Flags): number {
   const value = Number(raw);
   if (!Number.isInteger(value) || value < 0 || value > 5) throw new CommandError("--seconds must be a number from 0 to 5");
   return value;
+}
+
+function attributedTerminalText(role: RoomMessage["role"], value: string): string {
+  const label = role === "creator" ? "Lead" : "Guest";
+  return safeTerminalText(value)
+    .split("\n")
+    .map((line) => `${label}: ${line}`)
+    .join("\n");
 }
 
 function messages(value: unknown): RoomMessage[] {
@@ -642,7 +668,7 @@ async function check(flags: Flags, json: boolean): Promise<void> {
     const files = message.attachments
       .map((attachment) => `\n  File: ${safeTerminalText(attachment.filename)} (${attachment.id}, ${attachment.size} bytes)`)
       .join("");
-    return `${message.role === "creator" ? "Lead" : "Guest"}: ${safeTerminalText(message.text)}${files}`;
+    return `${attributedTerminalText(message.role, message.text)}${files}`;
   }).join("\n\n"), false);
 }
 
@@ -739,7 +765,12 @@ async function download(flags: Flags, json: boolean): Promise<void> {
   if (!attachment) throw new CommandError("The attachment was not found in this room");
   const destination = resolve(required(flags, "out"));
   await downloadTo(session, attachment, destination);
-  print(json ? { downloaded: true, attachment, out: destination } : `Downloaded ${attachment.filename} to ${destination}.`, json);
+  print(
+    json
+      ? { downloaded: true, attachment, out: destination }
+      : `Downloaded ${safeTerminalText(attachment.filename)} to ${destination}.`,
+    json,
+  );
 }
 
 async function status(flags: Flags, json: boolean): Promise<void> {
@@ -798,7 +829,7 @@ async function collect(flags: Flags, json: boolean): Promise<void> {
   const attachments = await listAttachments(session);
   const attachmentsDirectory = `${destination}.files`;
   for (const attachment of attachments) {
-    await downloadTo(session, attachment, join(attachmentsDirectory, `${attachment.id}-${attachment.filename}`), true);
+    await downloadTo(session, attachment, join(attachmentsDirectory, localAttachmentFilename(attachment)), true);
   }
 
   await mkdir(dirname(destination), { recursive: true });
@@ -835,6 +866,26 @@ async function collect(flags: Flags, json: boolean): Promise<void> {
       : `Result collected safely at ${destination}.${attachments.length > 0 ? ` ${attachments.length} attachment(s) saved in ${attachmentsDirectory}.` : ""} The room is now closed.`,
     json,
   );
+}
+
+function localAttachmentFilename(attachment: RoomAttachment): string {
+  const prefix = `${attachment.id}-`;
+  const maximumBytes = 180;
+  let filename = "";
+  for (const character of attachment.filename) {
+    const codePoint = character.codePointAt(0)!;
+    const unsafe =
+      character === "/" ||
+      character === "\\" ||
+      codePoint <= 31 ||
+      (codePoint >= 127 && codePoint <= 159) ||
+      (codePoint >= 0x202a && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x2069);
+    const next = unsafe ? "_" : character;
+    if (Buffer.byteLength(`${prefix}${filename}${next}`, "utf8") > maximumBytes) break;
+    filename += next;
+  }
+  return `${prefix}${filename || "attachment"}`;
 }
 
 async function showInvitation(flags: Flags, json: boolean): Promise<void> {

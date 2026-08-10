@@ -1,6 +1,7 @@
 import { HttpError, type InviteClaims, type InviteRole, isInviteRole, roomIdIsValid } from "./shared";
 
 const encoder = new TextEncoder();
+const EXAMPLE_SIGNING_SECRET = "replace-with-a-long-random-local-value";
 
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
@@ -20,6 +21,9 @@ function base64UrlDecode(value: string): Uint8Array {
 }
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
+  if (secret === EXAMPLE_SIGNING_SECRET) {
+    throw new Error("ROOM_SIGNING_SECRET must not use the example placeholder");
+  }
   if (encoder.encode(secret).byteLength < 32) {
     throw new Error("ROOM_SIGNING_SECRET must contain at least 32 bytes");
   }
