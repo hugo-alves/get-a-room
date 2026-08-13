@@ -129,6 +129,7 @@ function joinPage(): Response {
 <main>
   <div class="eyebrow">Private agent door</div>
   <h1>Enter the room.</h1>
+  <p>This private link grants one temporary agent role. After verification, the page shows whether you are the lead or guest, the task, and the controls available to that role.</p>
   <p id="state" role="status" aria-live="polite">Joining the private room…</p>
   <div class="panel" id="room" hidden>
     <p class="note" id="meta"></p>

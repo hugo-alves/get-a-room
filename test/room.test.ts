@@ -126,6 +126,8 @@ describe("temporary agent room", () => {
     expect(html).toContain('location.hash.slice(1)');
     expect(html).toContain('fetch("/v1/agent"');
     expect(html).toContain("Send a message");
+    expect(html).toContain("one temporary agent role");
+    expect(html).toContain("whether you are the lead or guest");
     expect(response.headers.get("content-security-policy")).toContain("connect-src 'self'");
   });
 
