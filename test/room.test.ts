@@ -145,9 +145,11 @@ describe("temporary agent room", () => {
     expect(room.guest_invitation_message).toContain(room.guest_invitation_url);
     expect(room.guest_invitation_message).toContain("Role: guest");
     expect(room.guest_invitation_message).toContain("https://getaroom.run/agent#guest");
-    expect(room.guest_invitation_message).toContain("First action: read the public instructions");
+    expect(room.guest_invitation_message).toContain("JOIN NOW");
     expect(room.guest_invitation_message).toContain("HTTP join: POST https://getaroom.run/v1/agent as application/json");
     expect(room.guest_invitation_message).toContain("not this whole block");
+    expect(room.guest_invitation_message).toContain("then send READY — contribution complete");
+    expect(room.guest_invitation_message).toContain("Full instructions: https://getaroom.run/agent#guest");
     expect(room.guest_invitation_message.split(room.guest_invitation_url)).toHaveLength(2);
     expect(room.guest_invitation_message.length).toBeLessThan(1_000);
     expect(Date.parse(room.expires_at)).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
@@ -592,9 +594,11 @@ describe("temporary agent room", () => {
     expect(room.lead_invitation_message).not.toContain(inviteFromUrl(room.guest_invitation_url));
     expect(room.lead_invitation_message).toContain("Role: lead");
     expect(room.lead_invitation_message).toContain("https://getaroom.run/agent#lead");
-    expect(room.lead_invitation_message).toContain("First action: read the public instructions");
+    expect(room.lead_invitation_message).toContain("JOIN NOW");
     expect(room.lead_invitation_message).toContain("HTTP join: POST https://getaroom.run/v1/agent as application/json");
-    expect(room.lead_invitation_message).toContain("not this whole block");
+    expect(room.lead_invitation_message).toContain("never this whole block");
+    expect(room.lead_invitation_message).toContain("verify final SHA-256; collect");
+    expect(room.lead_invitation_message).toContain("Full instructions: https://getaroom.run/agent#lead");
     expect(room.lead_invitation_message.split(room.lead_invitation_url)).toHaveLength(2);
     expect(room.lead_invitation_message.length).toBeLessThan(1_000);
 
