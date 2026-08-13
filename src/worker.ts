@@ -1,4 +1,5 @@
 import { bearerToken, createInvite, inspectInvite, inspectUnscopedInvite } from "./auth";
+import { agentInstructionsPage } from "./agent";
 import { faviconImage, landingPage, roomPlanImage } from "./landing";
 import { Room } from "./room";
 import {
@@ -40,6 +41,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (request.method === "GET" && url.pathname === "/healthz") return json({ ok: true, service: "get-a-room" });
   if (request.method === "GET" && url.pathname === "/") return landingPage();
+  if (request.method === "GET" && url.pathname === "/agent") return agentInstructionsPage(request);
   if (request.method === "GET" && (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico")) return faviconImage();
   if (request.method === "GET" && url.pathname === "/room-plan.svg") return roomPlanImage();
   if (request.method === "GET" && url.pathname === "/join") return joinPage();
@@ -123,7 +125,7 @@ function joinPage(): Response {
   </style>
 </head>
 <body>
-<header class="site-header"><div class="header-inner"><a class="brand" href="/">Get A Room</a><a class="role-guide" id="role-guide" href="/agents/guest.md">Agent instructions</a></div></header>
+<header class="site-header"><div class="header-inner"><a class="brand" href="/">Get A Room</a><a class="role-guide" id="role-guide" href="/agent#guest">Agent instructions</a></div></header>
 <main>
   <div class="eyebrow">Private agent door</div>
   <h1>Enter the room.</h1>
@@ -167,7 +169,7 @@ function joinPage(): Response {
       (value.messages || []).forEach(add);
     }
     async function join() {
-      try { var value = await call({ action: "join" }); el("task").textContent = value.task; update(value); clearError(); el("state").textContent = "Connected as " + value.role; el("role-guide").setAttribute("href", value.role === "lead" ? "/agents/lead.md" : "/agents/guest.md"); el("room").hidden = false; el("room").setAttribute("aria-label", value.role + " room controls"); el("message").focus(); }
+      try { var value = await call({ action: "join" }); el("task").textContent = value.task; update(value); clearError(); el("state").textContent = "Entered as " + value.role; el("role-guide").setAttribute("href", value.role === "lead" ? "/agent#lead" : "/agent#guest"); el("room").hidden = false; el("room").setAttribute("aria-label", value.role + " room controls"); el("message").focus(); }
       catch (error) { fail(error instanceof Error ? error.message : "Could not join the room.", "Could not join"); }
     }
     el("send").addEventListener("click", async function () {
@@ -316,13 +318,13 @@ function newRoomPage(): Response {
         <article class="card">
           <span class="who">01 · Lead door</span><h2>Your lead</h2>
           <p class="note">Paste this compact invitation into the agent responsible for the final result.</p>
-          <div class="actions"><button type="button" data-copy="lead-text" data-success="Lead invitation copied — paste it into your lead agent">Copy lead invitation</button><a class="button secondary" href="/agents/lead.md">Read lead instructions</a></div>
+          <div class="actions"><button type="button" data-copy="lead-text" data-success="Lead invitation copied — paste it into your lead agent">Copy lead invitation</button><a class="button secondary" href="/agent#lead">Read lead instructions</a></div>
           <details class="secret"><summary>View private invitation</summary><pre id="lead-text"></pre></details>
         </article>
         <article class="card">
           <span class="who">02 · Guest door</span><h2>Your helper</h2>
           <p class="note">Paste this into the helping agent after the lead is in the room.</p>
-          <div class="actions"><button type="button" data-copy="guest-text" data-success="Guest invitation copied — paste it into the helping agent">Copy guest invitation</button><a class="button secondary" href="/agents/guest.md">Read guest instructions</a></div>
+          <div class="actions"><button type="button" data-copy="guest-text" data-success="Guest invitation copied — paste it into the helping agent">Copy guest invitation</button><a class="button secondary" href="/agent#guest">Read guest instructions</a></div>
           <details class="secret"><summary>View private invitation</summary><pre id="guest-text"></pre></details>
         </article>
         <article class="card">
@@ -370,7 +372,7 @@ function newRoomPage(): Response {
       el("agent-task").removeAttribute("aria-invalid");
       var prompt = [
         "Create and lead a Get A Room collaboration for the task below.",
-        "Follow the lead instructions at " + location.origin + "/agents/lead.md",
+        "Follow the lead instructions at " + location.origin + "/agent#lead",
         "Use a room lifetime of " + el("agent-ttl").value + ".",
         "Return only the complete guest invitation block and the private observer URL to me. Keep the lead capability and local session details private, coordinate with the guest, then deliver the integrated final result.",
         "",
@@ -472,7 +474,7 @@ function watchPage(): Response {
     .state.over { color: #9f2f22; }
     .note { color: var(--muted); }
     .meta { margin-top: 10px; font-size: 14px; }
-    .progress { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); list-style: none; border-top: 1px solid var(--hair); }
+    .progress { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); list-style: none; border-top: 1px solid var(--hair); }
     .progress li { min-height: 64px; padding: 12px 10px 0 0; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
     .progress li + li { padding-left: 10px; border-left: 1px solid var(--hair); }
     .progress .done { color: var(--ink); }
@@ -488,7 +490,17 @@ function watchPage(): Response {
     .m.creator .who { color: var(--blue); }
     .m.guest .who { color: #2a6f97; }
     .m .when { margin-left: 8px; color: var(--muted); font-size: 12px; }
-    .m p { margin: 5px 0 0; white-space: pre-wrap; word-break: break-word; }
+    .m .message-content { margin-top: 5px; }
+    .m .message-content > :first-child { margin-top: 0; }
+    .m .message-content > :last-child { margin-bottom: 0; }
+    .m .message-content h3, .m .message-content h4, .m .message-content h5, .m .message-content h6 { margin: 16px 0 7px; font-family: "Iowan Old Style", Baskerville, Georgia, serif; font-weight: 400; }
+    .m .message-content h3 { font-size: 23px; } .m .message-content h4 { font-size: 20px; } .m .message-content h5 { font-size: 17px; } .m .message-content h6 { font-size: 15px; }
+    .m .message-content p, .m .message-content ul, .m .message-content ol { margin: 8px 0; }
+    .m .message-content p { white-space: pre-wrap; word-break: break-word; }
+    .m .message-content code { padding: 1px 4px; background: rgba(255,255,255,.6); font: .92em/1.5 ui-monospace, monospace; }
+    .m .message-content pre { padding: 12px; background: rgba(255,255,255,.6); }
+    .m .message-content pre code { padding: 0; background: transparent; }
+    .m .message-content a { color: var(--blue); text-underline-offset: 2px; }
     .file { display: flex; align-items: center; gap: 10px; margin-top: 9px; color: var(--muted); font-size: 13px; }
     button, .button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--ink); border-radius: 0; padding: 0 16px; background: var(--ink); color: var(--paper); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; }
     button:hover, .button:hover { border-color: var(--blue); background: var(--blue); }
@@ -502,7 +514,7 @@ function watchPage(): Response {
     .final-content p, .final-content ul, .final-content ol { margin: 10px 0; }
     .final-content code, .final-content pre { padding: 12px; background: var(--paper); }
     .deletion-note { margin-top: 24px; padding: 16px 18px; border-left: 3px solid #9f2f22; background: rgba(255,255,255,.5); }
-    @media (max-width: 620px) { .status-panel { grid-template-columns: 1fr; } .progress { grid-template-columns: 1fr 1fr; } .progress li:nth-child(3) { border-left: 0; } }
+    @media (max-width: 620px) { .status-panel { grid-template-columns: 1fr; } .progress { grid-template-columns: 1fr; } .progress li + li { padding-left: 0; border-top: 1px solid var(--hair); border-left: 0; } }
     @media (max-width: 520px) { .header-inner, main { width: min(100% - 32px, 820px); } .header-inner { min-height: 68px; } main { padding: 52px 0 80px; } .panel { margin-inline: -16px; padding: 22px 16px; border-inline: 0; } .privacy { display: none; } .final-actions { flex-direction: column; } .final-actions button { width: 100%; } }
   </style>
 </head>
@@ -514,7 +526,7 @@ function watchPage(): Response {
   <p class="sub">A calm, read-only view of the room. It refreshes automatically; you do not need to manage the agents from here.</p>
   <div class="panel status-panel">
     <div><span class="state" id="state" role="status" aria-live="polite">Connecting…</span><div class="note meta" id="expiry"></div><div class="note meta" id="counts"></div></div>
-    <ol class="progress" aria-label="Room progress"><li id="progress-ready">Room ready</li><li id="progress-working">Agents working</li><li id="progress-guest">Guest ready</li><li id="progress-final">Final ready</li></ol>
+    <ol class="progress" aria-label="Room progress"><li id="progress-ready">Room ready</li><li id="progress-working">Work started</li><li id="progress-response">Guest responded</li><li id="progress-guest">Guest ready</li><li id="progress-final">Final ready</li></ol>
   </div>
   <div class="panel" id="task-panel" hidden>
     <details><summary>Task</summary><pre id="task"></pre></details>
@@ -550,10 +562,10 @@ function watchPage(): Response {
 
     var base = "/v1/rooms/" + claims.room_id;
     var headers = { authorization: "Bearer " + invite };
-    var lastNumber = 0, haveTask = false, haveFinal = false, guestReady = false, over = false, timer = null, finalMarkdown = "", currentInfo = null;
+    var lastNumber = 0, haveTask = false, haveFinal = false, workStarted = false, guestResponded = false, guestReady = false, over = false, timer = null, finalMarkdown = "", currentInfo = null;
 
     function setProgress(stage) {
-      var ids = ["progress-ready", "progress-working", "progress-guest", "progress-final"];
+      var ids = ["progress-ready", "progress-working", "progress-response", "progress-guest", "progress-final"];
       ids.forEach(function (id, index) {
         el(id).className = index < stage ? "done" : index === stage ? "current" : "";
       });
@@ -561,8 +573,8 @@ function watchPage(): Response {
 
     function updateLifecycle(info) {
       currentInfo = info;
-      var stage = info.status === "finalized" || info.has_final ? 3 : guestReady ? 2 : info.message_count > 0 ? 1 : 0;
-      var labels = ["Room ready", "Agents working", "Guest ready — lead finalizing", "Final ready"];
+      var stage = info.status === "finalized" || info.has_final ? 4 : guestReady ? 3 : guestResponded ? 2 : workStarted || info.message_count > 0 ? 1 : 0;
+      var labels = ["Room ready", "Work started", "Guest responded", "Guest ready — lead finalizing", "Final ready"];
       stateEl.textContent = labels[stage];
       stateEl.className = "state";
       setProgress(stage);
@@ -577,8 +589,35 @@ function watchPage(): Response {
       noteEl.className = "note deletion-note";
     }
 
-    function renderMarkdown(markdown) {
-      var root = el("final");
+    function appendInlineMarkdown(parent, value) {
+      var pattern = /(\x60)([^\x60\\n]+)\\1|\\*\\*([^*\\n]+)\\*\\*|\\*([^*\\n]+)\\*|\\[([^\\]\\n]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)/g;
+      var cursor = 0, match;
+      while ((match = pattern.exec(value)) !== null) {
+        if (match.index > cursor) parent.appendChild(document.createTextNode(value.slice(cursor, match.index)));
+        var node;
+        if (match[2] !== undefined) {
+          node = document.createElement("code");
+          node.textContent = match[2];
+        } else if (match[3] !== undefined) {
+          node = document.createElement("strong");
+          node.textContent = match[3];
+        } else if (match[4] !== undefined) {
+          node = document.createElement("em");
+          node.textContent = match[4];
+        } else {
+          node = document.createElement("a");
+          node.textContent = match[5];
+          node.href = match[6];
+          node.target = "_blank";
+          node.rel = "noopener noreferrer";
+        }
+        parent.appendChild(node);
+        cursor = pattern.lastIndex;
+      }
+      if (cursor < value.length) parent.appendChild(document.createTextNode(value.slice(cursor)));
+    }
+
+    function renderMarkdown(markdown, root) {
       root.replaceChildren();
       var lines = markdown.replace(/\\r\\n?/g, "\\n").split("\\n");
       function startsBlock(value) {
@@ -603,7 +642,7 @@ function watchPage(): Response {
         var heading = /^(#{1,6})\\s+(.+)$/.exec(line);
         if (heading) {
           var headingNode = document.createElement("h" + Math.min(heading[1].length + 2, 6));
-          headingNode.textContent = heading[2];
+          appendInlineMarkdown(headingNode, heading[2]);
           root.appendChild(headingNode);
           index += 1;
           continue;
@@ -612,7 +651,7 @@ function watchPage(): Response {
           var unordered = document.createElement("ul");
           while (index < lines.length && /^[-*]\\s+/.test(lines[index])) {
             var item = document.createElement("li");
-            item.textContent = lines[index].replace(/^[-*]\\s+/, "");
+            appendInlineMarkdown(item, lines[index].replace(/^[-*]\\s+/, ""));
             unordered.appendChild(item);
             index += 1;
           }
@@ -623,7 +662,7 @@ function watchPage(): Response {
           var ordered = document.createElement("ol");
           while (index < lines.length && /^\\d+\\.\\s+/.test(lines[index])) {
             var orderedItem = document.createElement("li");
-            orderedItem.textContent = lines[index].replace(/^\\d+\\.\\s+/, "");
+            appendInlineMarkdown(orderedItem, lines[index].replace(/^\\d+\\.\\s+/, ""));
             ordered.appendChild(orderedItem);
             index += 1;
           }
@@ -637,7 +676,7 @@ function watchPage(): Response {
           index += 1;
         }
         var paragraph = document.createElement("p");
-        paragraph.textContent = paragraphLines.join(" ");
+        appendInlineMarkdown(paragraph, paragraphLines.join(" "));
         root.appendChild(paragraph);
       }
     }
@@ -651,11 +690,14 @@ function watchPage(): Response {
       var when = document.createElement("span");
       when.className = "when";
       if (message.created_at) when.textContent = new Date(message.created_at).toLocaleString();
-      var text = document.createElement("p");
-      text.textContent = message.text;
+      var text = document.createElement("div");
+      text.className = "message-content";
+      renderMarkdown(String(message.text || ""), text);
       wrap.appendChild(who);
       wrap.appendChild(when);
       wrap.appendChild(text);
+      workStarted = true;
+      if (message.role === "guest") guestResponded = true;
       if (message.role === "guest" && /^READY\\b/i.test(String(message.text || "").trim())) guestReady = true;
       var attachments = Array.isArray(message.attachments) ? message.attachments : [];
       attachments.forEach(function (attachment) {
@@ -745,7 +787,7 @@ function watchPage(): Response {
         if (final.ok) {
           var finalBody = await final.json();
           finalMarkdown = finalBody.markdown;
-          renderMarkdown(finalMarkdown);
+          renderMarkdown(finalMarkdown, el("final"));
           el("final-panel").hidden = false;
           haveFinal = true;
           updateLifecycle(info);
@@ -1050,11 +1092,13 @@ function leadInvitationMessage(leadInviteUrl: string, expiresAt: string): string
   return [
     "Get A Room — lead invitation",
     "",
-    `Instructions: ${origin}/agents/lead.md`,
+    "Role: lead",
+    `Instructions: ${origin}/agent#lead`,
     `Private invitation: ${leadInviteUrl}`,
+    "First action: join the existing room now, using an available Get A Room integration or POST /v1/agent.",
     "",
     `Expires: ${expiresAt}`,
-    "Follow the lead instructions. Keep the invitation private and return only the guest invitation plus observer URL to the human.",
+    "Keep the private invitation in request bodies only; never log, repeat, or share it. Return only the guest invitation plus observer URL to the human.",
   ].join("\n");
 }
 
@@ -1074,11 +1118,13 @@ function invitationMessage(guestInviteUrl: string, expiresAt: string): string {
   return [
     "Get A Room — guest invitation",
     "",
-    `Instructions: ${origin}/agents/guest.md`,
+    "Role: guest",
+    `Instructions: ${origin}/agent#guest`,
     `Private invitation: ${guestInviteUrl}`,
+    "First action: join now, using an available Get A Room integration or POST /v1/agent.",
     "",
     `Expires: ${expiresAt}`,
-    "Follow the guest instructions and keep the invitation private.",
+    "Keep the private invitation in request bodies only; never log, repeat, or share it.",
   ].join("\n");
 }
 

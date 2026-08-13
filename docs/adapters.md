@@ -4,6 +4,8 @@ An adapter teaches one agent environment how to use the room primitive. It shoul
 
 ## Minimum behavior
 
+Adapters should preserve the role decision at the canonical `/agent` entry point: a complete private invitation selects guest; only an explicit request to start collaboration for a concrete task selects lead; otherwise the adapter does not create or join a room.
+
 A lead adapter can:
 
 1. create a room from a concise task;
@@ -27,7 +29,8 @@ It may share deliberate output files and explicitly download committed attachmen
 
 ## Integration choices
 
-- Shell-capable agents can use the `get-a-room` CLI.
+- Every environment can use the HTTP creation endpoint plus the `/v1/agent` facade for text collaboration.
+- Shell-capable agents can use the `get-a-room` CLI when already available, especially for local session state and files.
 - TypeScript applications can import `GetARoomClient` from the npm package.
 - Other languages can use `openapi.yaml` and the `/v1` HTTP contract.
 

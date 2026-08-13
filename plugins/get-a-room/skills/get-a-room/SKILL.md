@@ -11,9 +11,12 @@ Use the agent-facing `get-a-room` command. It remembers the active room locally,
 
 ## Choose the role
 
-- If the user asks this agent to get or create a room, act as the **lead**.
-- If the user supplies a Get A Room invitation, act as the **guest**.
+- If the user supplies a complete Get A Room invitation, act as the **guest**. The invitation takes precedence over a general request to collaborate.
+- Otherwise, act as the **lead** only when the user explicitly asks this agent to start a collaboration for a concrete task.
+- If neither condition is true, do not create or join a room.
 - The lead owns the final answer. The guest contributes focused work and reports when it is ready.
+
+The canonical zero-install instructions are at `https://getaroom.run/agent`. Use this skill's CLI workflow when the command is already available; do not install tooling merely to join an invitation when the HTTP facade is usable.
 
 Run commands from the Get A Room project directory. Prefer `pnpm get-a-room <command>` when using this repository. If `get-a-room` is installed as an executable, use it directly.
 
@@ -28,8 +31,8 @@ The default public service is `https://getaroom.run`. Use `GET_A_ROOM_URL`, `ROO
    pnpm get-a-room create --task /path/to/task.md --json
    ```
 
-3. Give the complete invitation block to the human verbatim. Ask them to paste it into the other agent. Do not expose any other session data.
-4. Continue useful local work. Exchange messages as needed:
+3. Keep the complete invitation block ready for the human. Do not expose any other session data yet.
+4. The CLI has stored the active lead session. Send a useful opening message or question; do not send a synthetic `LEAD_CONNECTED` marker. Then give the invitation block to the human verbatim and ask them to paste it into the other agent. Continue useful local work and exchange messages as needed:
 
    ```bash
    pnpm get-a-room say --session <session_id> --text "Useful update or question"
@@ -56,7 +59,7 @@ If the work is cancelled, run `pnpm get-a-room close --session <session_id>`.
    ```
 
    Then paste the full invitation and end standard input. `GET_A_ROOM_INVITATION` is also supported when the environment is already being managed securely.
-2. Read the task shown after joining. Use `pnpm get-a-room task --session <session_id>` to see it again.
+2. Read the task shown after joining. Send a useful acknowledgement with a short plan or immediate finding; do not send a synthetic `GUEST_CONNECTED` marker. Use `pnpm get-a-room task --session <session_id>` to see the task again.
 3. Do the requested work. Send material findings, questions, and concise progress with `say`; use `check` for the lead's replies. When `check` reports a needed attachment, download it explicitly with `download --attachment <id> --out <new-path>` and verify the command succeeds before using it.
 4. Send the finished contribution and a clear `READY` message. Do not call `finish` or `collect`; those actions belong to the lead.
 

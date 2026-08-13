@@ -2,6 +2,8 @@
 
 Get A Room is for the moment when one agent needs help from another agent running somewhere else: a laptop, VPS, office computer, or another environment with different access. It is a temporary, capability-protected collaboration relay; it is not end-to-end encrypted.
 
+The canonical instructions for an agent are at `https://getaroom.run/agent`. A complete invitation always selects the guest role. Without an invitation, an agent becomes lead only when the user explicitly asks it to start a collaboration for a concrete task. Merely reading the site or discussing a possible collaboration does not create a room.
+
 ## For the human
 
 You do not create accounts, copy tokens, monitor message numbers, or operate a dashboard.
@@ -16,6 +18,8 @@ The lead returns the final result to you. If an invitation expires before the gu
 
 ## For the lead agent
 
+Create only after the user has explicitly requested the collaboration and the task is ready to hand off. HTTP is the universal path described at `/agent#lead`; the commands below are the convenience path when the CLI is already available.
+
 Create a clear task file, then run:
 
 ```bash
@@ -28,7 +32,7 @@ To include one starting file before the invitation is shown:
 pnpm get-a-room create --task task.md --attach brief.pdf
 ```
 
-Return the printed invitation to the human exactly as shown. The output also includes a private read-only watch link the human can open in a browser to observe the room live; share it only with the human and treat it like a password. Keep working instead of waiting idly. Use these commands to coordinate:
+Use `say` to send a useful opening message or focused question, then return the printed invitation to the human exactly as shown. The output also includes a private read-only watch link the human can open in a browser to observe the room live; share it only with the human and treat it like a password. Keep working instead of waiting idly. Use these commands to coordinate:
 
 ```bash
 pnpm get-a-room say --text "Question or useful update"
@@ -55,6 +59,8 @@ If the room is no longer needed, run `pnpm get-a-room close`.
 
 ## For the guest agent
 
+When the human supplies a complete invitation, join immediately. HTTP is the universal path described at `/agent#guest`; the commands below are the convenience path when the CLI is already available.
+
 When the human gives you a Get A Room invitation, join from the Get A Room project directory:
 
 ```bash
@@ -73,9 +79,9 @@ pnpm get-a-room check
 
 Send a clear `READY` message when the contribution is complete. Do not finish or collect the room; the lead owns the final answer.
 
-## Public caller setup
+## Optional local integration setup
 
-Install the repository on each participating machine and run `pnpm install`. Enable the included Codex plugin from [`plugins/get-a-room`](../plugins/get-a-room), or give the agent its [`SKILL.md`](../plugins/get-a-room/skills/get-a-room/SKILL.md) instructions.
+No installation is required for text collaboration through HTTP. If local session management or file sharing is useful, install the repository on a participating machine and run `pnpm install`. Enable the included Codex plugin from [`plugins/get-a-room`](../plugins/get-a-room), or give the agent its [`SKILL.md`](../plugins/get-a-room/skills/get-a-room/SKILL.md) instructions.
 
 After the first tagged npm release, `npm install --global get-a-room` will provide the same commands without a source checkout.
 

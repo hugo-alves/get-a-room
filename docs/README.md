@@ -4,6 +4,7 @@ Start with the [usage guide](usage-guide.md) to run a room. The remaining docume
 
 ## Product and protocol
 
+- [Canonical agent instructions](https://getaroom.run/agent)
 - [Usage guide](usage-guide.md)
 - [Protocol](protocol.md)
 - [Architecture](architecture.md)

@@ -102,6 +102,20 @@ describe("temporary agent room", () => {
     await expect(response.json()).resolves.toEqual({ ok: true, service: "get-a-room" });
   });
 
+  it("serves one canonical Markdown entry point for agents", async () => {
+    const response = await workerFetch("/agent");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    const markdown = await response.text();
+    expect(markdown).toContain("# Get A Room for agents");
+    expect(markdown).toContain("The complete private invitation takes precedence");
+    expect(markdown).toContain("POST https://room.test/v1/rooms");
+    expect(markdown).toContain("POST https://room.test/v1/agent");
+    expect(markdown).toContain("do not create or join a room");
+    expect(markdown).toContain("The `/v1/agent` facade does not upload or download attachments");
+  });
+
   it("serves a same-origin browser client that reads its invitation from the fragment", async () => {
     const response = await workerFetch("/join");
     expect(response.status).toBe(200);
@@ -129,7 +143,9 @@ describe("temporary agent room", () => {
     expect(room.creator_capability).not.toBe("");
     expect(room.guest_invitation_url).toMatch(/^https:\/\/getaroom\.run\/join#invite=/);
     expect(room.guest_invitation_message).toContain(room.guest_invitation_url);
-    expect(room.guest_invitation_message).toContain("https://getaroom.run/agents/guest.md");
+    expect(room.guest_invitation_message).toContain("Role: guest");
+    expect(room.guest_invitation_message).toContain("https://getaroom.run/agent#guest");
+    expect(room.guest_invitation_message).toContain("First action: join now");
     expect(room.guest_invitation_message.split(room.guest_invitation_url)).toHaveLength(2);
     expect(room.guest_invitation_message.length).toBeLessThan(1_000);
     expect(Date.parse(room.expires_at)).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
@@ -533,6 +549,7 @@ describe("temporary agent room", () => {
     expect(csp).toContain("connect-src 'self'");
     const html = await response.text();
     expect(html).toContain("Copy prompt for my lead agent");
+    expect(html).toContain('/agent#lead');
     expect(html).toContain("Create the room manually instead");
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain("button.dataset.label || button.textContent");
@@ -547,6 +564,8 @@ describe("temporary agent room", () => {
     const html = await page.text();
     expect(html).toContain("A room is");
     expect(html).toContain('href="/new"');
+    expect(html).toContain('href="/agent"');
+    expect(html).toContain('rel="alternate" type="text/markdown" href="/agent"');
     expect(html).toContain('href="/favicon.svg"');
     expect(html).toContain('src="/get-a-room-launch.mp4"');
     expect(html).toContain('href="https://github.com/hugo-alves/get-a-room"');
@@ -569,7 +588,9 @@ describe("temporary agent room", () => {
     expect(inviteFromUrl(room.lead_invitation_url)).toBe(room.creator_capability);
     expect(room.lead_invitation_message).toContain(room.lead_invitation_url);
     expect(room.lead_invitation_message).not.toContain(inviteFromUrl(room.guest_invitation_url));
-    expect(room.lead_invitation_message).toContain("https://getaroom.run/agents/lead.md");
+    expect(room.lead_invitation_message).toContain("Role: lead");
+    expect(room.lead_invitation_message).toContain("https://getaroom.run/agent#lead");
+    expect(room.lead_invitation_message).toContain("First action: join the existing room now");
     expect(room.lead_invitation_message.split(room.lead_invitation_url)).toHaveLength(2);
     expect(room.lead_invitation_message.length).toBeLessThan(1_000);
 
@@ -592,7 +613,15 @@ describe("temporary agent room", () => {
     expect(html).toContain("Observer window");
     expect(html).toContain("Copy final");
     expect(html).toContain("Room deleted");
+    expect(html).toContain("Work started");
+    expect(html).toContain("Guest responded");
+    expect(html).not.toContain("Agents working");
     expect(html).toContain('message.role === "creator" ? "Lead" : "Guest"');
+    expect(html).toContain('renderMarkdown(String(message.text || ""), text)');
+    expect(html).toContain('renderMarkdown(finalMarkdown, el("final"))');
+    expect(html).toContain('node.rel = "noopener noreferrer"');
+    expect(html).not.toContain("innerHTML");
+    expect(html).not.toContain("text.textContent = message.text");
     expect(html).toContain('value.indexOf("```") === 0');
     expect(html).toContain("/^(?:#{1,6}\\s+");
     expect(html).toContain("!startsBlock(lines[index])");

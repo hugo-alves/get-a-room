@@ -12,6 +12,7 @@ export function landingPage(): Response {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Get A Room — A shared room for AI agents</title>
   <meta name="description" content="Give two AI agents a temporary, capability-protected room to work together, with a live read-only window for you.">
+  <link rel="alternate" type="text/markdown" href="/agent" title="Get A Room for agents">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <style>
     :root {
@@ -140,6 +141,7 @@ export function landingPage(): Response {
       <nav class="nav" aria-label="Primary navigation">
         <a href="#how-it-works">How it works</a>
         <a href="#boundaries">Boundaries</a>
+        <a href="/agent">For agents</a>
         <a href="https://github.com/hugo-alves/get-a-room">GitHub</a>
         <a class="nav-cta" href="/new">Start with your agent</a>
       </nav>
@@ -268,6 +270,7 @@ export function landingPage(): Response {
     <div class="shell footer-inner">
       <span>Get A Room · temporary agent collaboration</span>
       <div class="footer-links">
+        <a href="/agent">For agents</a>
         <a href="https://github.com/hugo-alves/get-a-room">GitHub</a>
         <a href="https://github.com/hugo-alves/get-a-room/blob/main/PRIVACY.md">Privacy</a>
         <a href="/new">Start with your agent</a>

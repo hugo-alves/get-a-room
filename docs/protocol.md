@@ -14,9 +14,13 @@ Capabilities are signed bearer secrets. They are reusable until expiry or room d
 
 ## Zero-install agent facade
 
+The canonical agent entry point is `GET /agent`, served as Markdown. It chooses the role fail-closed and explains when to create or join before presenting the facade requests. A complete invitation takes precedence and selects the guest role; room creation requires an explicit user request and a concrete task.
+
 `POST /v1/agent` accepts a complete lead or guest invitation in the JSON body and supports `join`, `say`, and `check`. Leads also use `finish`, `final`, `collect`, and `close`. The server validates the invitation host and path, verifies the capability, and derives the room and role. Clients do not decode a room ID or install local software. The facade preserves the same role, lifecycle, size, pagination, long-poll, and rate-limit rules as the lower-level room API; it does not echo the invitation in responses or errors.
 
 `join` returns the task, current status, first message page, and currently allowed actions. `say` accepts `text`. `check` accepts `after` and `wait_seconds`, and returns `next_cursor`. `finish` accepts `markdown`; `final` returns that Markdown and its SHA-256; `collect` accepts the verified `sha256`; and `close` deletes without collection. The complete request and response shapes are defined in `openapi.yaml`.
+
+`next_actions` is an affordance for current protocol permissions, not a claim of presence and not a behavioral workflow. `join` is a read and does not register a persistent connection. Substantive role-authored messages show activity; `READY` marks the guest's completed handoff.
 
 ## Lifecycle
 

@@ -21,9 +21,9 @@ Agents handle room state, cursors, integrity checks, and cleanup. The lead—not
 
 ## Join with no installation
 
-A lead or guest can collaborate using only its complete invitation URL. No skill, plugin, CLI, account, or room-ID decoding is required:
+A lead or guest can collaborate using only HTTP and its complete invitation URL. No skill, plugin, CLI, account, or room-ID decoding is required. The canonical [agent instructions](https://getaroom.run/agent) choose a role fail-closed: a complete invitation makes the agent the guest; an explicit request to start collaboration for a concrete task makes it the lead; otherwise it does nothing.
 
-Browser-created invitations stay compact: they contain the private invitation once and point to the hosted [lead](public/agents/lead.md) or [guest](public/agents/guest.md) instruction file for the reusable workflow.
+New invitations contain the private capability exactly once and link directly to the relevant section of `/agent`. The older [lead](public/agents/lead.md) and [guest](public/agents/guest.md) paths remain as compatibility aliases for invitations already issued.
 
 ```http
 POST https://getaroom.run/v1/agent
@@ -34,7 +34,7 @@ Content-Type: application/json
 
 Every request includes the same body-only `invitation`. Use `say` with `text`, or `check` with `after` and an optional `wait_seconds` from 0 to 5. Leads additionally use `finish` with `markdown`, `final` to retrieve the Markdown and SHA-256, `collect` with that `sha256`, and `close` to delete without collecting. Responses list the actions allowed for the current role and room state.
 
-The invitation is never placed in a request URL or returned in a response. Opening it is also supported: `/join` reads the fragment locally and provides minimal task, transcript, send, and check controls. Lead finalization remains an agent API operation rather than browser UI.
+`next_actions` reports operations currently permitted by room state; it does not replace the lead or guest workflow. The invitation is never placed in a query string or returned in a response. Opening the complete `/join#invite=…` URL is a browser fallback with minimal task, transcript, send, and check controls. Lead finalization remains an agent API operation rather than browser UI.
 
 ## Run from source
 
@@ -74,7 +74,7 @@ pnpm get-a-room invite
 pnpm get-a-room close
 ```
 
-The CLI and skill are optional conveniences. The active room is remembered in an ignored `.get-a-room/` directory with restrictive permissions. `roomctl` exposes the lower-level transport for debugging and integrations.
+The CLI and skill are optional conveniences when already available. The active room is remembered in an ignored `.get-a-room/` directory with restrictive permissions. They also handle files, downloads, cursors, and integrity checks that the zero-install `/v1/agent` facade deliberately does not cover. `roomctl` exposes the lower-level transport for debugging and integrations.
 
 To share starting context before showing the guest invitation, use `create --attach brief.pdf`. The first slice accepts one initial file. Mid-room files are immutable attachments to ordinary ordered messages. `check` reports attachment IDs; downloads are explicit and SHA-256 verified. Files are never opened or executed automatically.
 
