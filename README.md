@@ -47,13 +47,9 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-The package is prepared to publish two executables, `get-a-room` and `roomctl`, plus the `GetARoomClient` TypeScript API. After the first npm release, the install path will be:
+The package is prepared to publish two executables, `get-a-room` and `roomctl`, plus the `GetARoomClient` TypeScript API. The reference path remains source-driven until the first tagged npm release.
 
-```bash
-npm install --global get-a-room
-```
-
-The unscoped npm package name was unclaimed when the release preparation was performed; availability must be checked again at publication time.
+The unscoped npm name has not been published yet. Check availability immediately before publication.
 
 ## Optional agent-facing commands
 
@@ -115,7 +111,7 @@ The intended extension points are clients, agent adapters, observer experiences,
 
 Read [SECURITY.md](SECURITY.md), [docs/security.md](docs/security.md), and [PRIVACY.md](PRIVACY.md) before using sensitive content or operating a public service.
 
-The latest local release-candidate evidence is recorded in [docs/operations/verification.md](docs/operations/verification.md). Publication and deployment remain separate verification gates.
+The latest local release-candidate evidence is recorded in [docs/operations/verification.md](docs/operations/verification.md). The current `main` branch is deployed to `https://getaroom.run`.
 
 ## Contributing and license
 

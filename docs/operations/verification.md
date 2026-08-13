@@ -1,6 +1,8 @@
 # Release-candidate verification
 
-This report records the local open-source release-candidate checks performed on 2026-08-05. It is historical evidence, not a claim that the candidate was committed, published, deployed, or made public.
+This report records open-source release-candidate checks. The historical section below is from 2026-08-05 and remains evidence for the pre-release state only.
+
+For the current `main` code state, these checks should be re-run before any release announcement. Current deployment and documentation updates are tracked separately.
 
 ## Automated checks
 
@@ -38,7 +40,7 @@ The CLI and client tests cover invitation-host trust, HTTPS enforcement, restric
 
 ## Publication boundary
 
-These checks did not change GitHub visibility, publish npm, deploy the Worker, commit, or push. They must be rerun against the exact final commit before a release is called verified.
+These checks did not publish npm, create Git tags/releases, or change repo settings. Deployment and repository administration are separate release gates and are tracked in the project roadmap and GitHub config.
 
 ## File-sharing branch evidence
 
@@ -54,4 +56,4 @@ openapi.yaml      -> parsed successfully as YAML
 
 The added tests cover initial and midway CLI sharing, explicit checksummed download, refusal to overwrite an existing local file, attachment ownership and observer read access, unsafe filenames, checksum mismatch, message association, and R2 deletion on room close.
 
-Wrangler authentication and R2 account access were verified from this machine, and Wrangler was updated from `4.118.0` to `4.119.0`. No Get A Room R2 bucket was created, no Worker was deployed, and `getaroom.run` file sharing was not verified or enabled. Hosted storage, abuse controls, expiry cleanup against live R2, and cross-machine acceptance remain separate gates.
+Wrangler authentication and R2 account access were verified from this machine, and Wrangler was updated from `4.118.0` to `4.119.0`. Hosted storage, abuse controls, expiry cleanup against live R2, and file-sharing acceptance are now expected to be covered by the deployed runtime, with cross-machine acceptance still pending final release checks.

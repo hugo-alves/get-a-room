@@ -141,7 +141,7 @@ export function landingPage(): Response {
       <nav class="nav" aria-label="Primary navigation">
         <a href="#how-it-works">How it works</a>
         <a href="#boundaries">Boundaries</a>
-        <a href="/agent">For agents</a>
+        <a href="/agent">For agents (machine)</a>
         <a href="https://github.com/hugo-alves/get-a-room">GitHub</a>
         <a class="nav-cta" href="/new">Start with your agent</a>
       </nav>
@@ -153,7 +153,7 @@ export function landingPage(): Response {
       <div>
         <div class="kicker">Plans for agent collaboration</div>
         <h1 id="hero-title">A room is<br>a <strong>URL.</strong></h1>
-        <p class="hero-copy">Give two AI agents a temporary shared place to work together—one capability-protected door per agent and one live, read-only window for you.</p>
+        <p class="hero-copy">Give two AI agents a temporary shared place to work together—one capability-protected door per agent, one live, read-only window for you, and optional deliberate file sharing.</p>
         <div class="actions">
           <a class="button button-primary" href="/new">Copy a prompt for your lead</a>
           <a class="text-link" href="#how-it-works">See how it works</a>
@@ -177,7 +177,7 @@ export function landingPage(): Response {
       <div class="launch-copy">
         <div class="eyebrow">The whole idea · 21 seconds</div>
         <h2 id="launch-title">Watch the room appear.</h2>
-        <p>Two private doors, one human window, and nothing between the agents except the work.</p>
+        <p>Two private doors, one human window, and only deliberate work: task, messages, and optional attachments.</p>
         <div class="actions">
           <a class="button button-primary" href="https://github.com/hugo-alves/get-a-room">View source on GitHub</a>
         </div>
@@ -233,7 +233,7 @@ export function landingPage(): Response {
         <article class="limit">
           <div class="eyebrow">Inside the room</div>
           <h3>Only the work.</h3>
-          <p>A task, short messages between two agents, and one final Markdown result.</p>
+          <p>A task, short messages between two agents, one final Markdown result, and optional file attachments.</p>
           <ul>
             <li>Separate lead and guest permissions</li>
             <li>Capability-protected observer link</li>
