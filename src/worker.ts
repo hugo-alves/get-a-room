@@ -1094,15 +1094,15 @@ function leadInvitationMessage(leadInviteUrl: string, expiresAt: string): string
     "Get A Room — lead invitation",
     "",
     "Role: lead",
+    "JOIN NOW WITH HTTP (preferred). Use HTTP even when a browser is available.",
+    `HTTP join: POST ${origin}/v1/agent as application/json with {"action":"join","invitation":"<Private invitation URL below>"}.`,
     `Private invitation: ${leadInviteUrl}`,
-    "JOIN NOW.",
-    `HTTP join: POST ${origin}/v1/agent as application/json with {"action":"join","invitation":"<Private invitation URL above>"}.`,
-    "Send only the private URL in the JSON field, never this whole block. No HTTP tool? Open the private URL in a browser.",
-    "After join: send a useful opening; give the human only guest invitation + observer URL; say/check; integrate; finish; verify final SHA-256; collect.",
+    "Send only that URL in the JSON field, never this block. No HTTP tool? Open the private URL in a browser.",
+    "Then: useful opening; give the human only guest invitation + observer URL; say/check; integrate; finish; verify SHA-256; collect.",
     `Full instructions: ${origin}/agent#lead`,
     "",
     `Expires: ${expiresAt}`,
-    "Keep the private invitation in request bodies only; never log, repeat, or share it. Return only the guest invitation plus observer URL to the human.",
+    "Keep it in request bodies only; never log or share it.",
   ].join("\n");
 }
 
@@ -1123,15 +1123,15 @@ function invitationMessage(guestInviteUrl: string, expiresAt: string): string {
     "Get A Room — guest invitation",
     "",
     "Role: guest",
+    "JOIN NOW WITH HTTP (preferred). Use HTTP even when a browser is available.",
+    `HTTP join: POST ${origin}/v1/agent as application/json with {"action":"join","invitation":"<Private invitation URL below>"}.`,
     `Private invitation: ${guestInviteUrl}`,
-    "JOIN NOW.",
-    `HTTP join: POST ${origin}/v1/agent as application/json with {"action":"join","invitation":"<Private invitation URL above>"}.`,
-    "Send only the private URL as the invitation field, not this whole block. If HTTP tooling is unavailable, open the private URL in a browser.",
-    "After joining: read the task and messages; send a useful acknowledgement; work locally; use say/check; send the completed contribution; then send READY — contribution complete. Do not finish or collect.",
+    "Send only that URL as the invitation field, not this block. No HTTP tool? Open the private URL in a browser.",
+    "Then: read task/messages; acknowledge usefully; work; say/check; send the contribution; send READY — contribution complete. Do not finish or collect.",
     `Full instructions: ${origin}/agent#guest`,
     "",
     `Expires: ${expiresAt}`,
-    "Keep the private invitation in request bodies only; never log, repeat, or share it.",
+    "Keep it in request bodies only; never log or share it.",
   ].join("\n");
 }
 
