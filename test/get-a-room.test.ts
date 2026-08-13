@@ -280,6 +280,29 @@ describe("get-a-room", () => {
     }
   });
 
+  it("joins from an invitation file without putting the capability in argv", async () => {
+    const home = await temp();
+    const guest = invite("guest");
+    const mock = await server((request, response) => {
+      if (request.url === `/v1/rooms/${ROOM_ID}/task`) return send(response, { task: "Use the opaque invitation." });
+      if (request.url === `/v1/rooms/${ROOM_ID}/status`) {
+        return send(response, { state: "open", expires_at: "2030-01-01T00:00:00.000Z" });
+      }
+      return send(response, { error: "not_found" }, 404);
+    });
+    const invitationFile = join(home, "invitation.txt");
+    await writeFile(invitationFile, `${mock.url}/join#invite=${encodeURIComponent(guest)}\n`, { mode: 0o600 });
+
+    try {
+      const output = await run([
+        "join", "--base-url", mock.url, "--invitation-file", invitationFile, "--json",
+      ], home);
+      expect(JSON.parse(output)).toMatchObject({ role: "guest", task: "Use the opaque invitation." });
+    } finally {
+      await mock.close();
+    }
+  });
+
   it("rejects invitations from an unconfigured host before sending the capability", async () => {
     const home = await temp();
     const guest = invite("guest");

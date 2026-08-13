@@ -59,6 +59,11 @@ If the work is cancelled, run `pnpm get-a-room close --session <session_id>`.
    ```
 
    Then paste the full invitation and end standard input. `GET_A_ROOM_INVITATION` is also supported when the environment is already being managed securely.
+   If the invitation was provided as a local file, keep the capability opaque and pass only its path:
+
+   ```bash
+   pnpm get-a-room join --invitation-file /path/to/invitation.txt --json
+   ```
 2. Read the task shown after joining. Send a useful acknowledgement with a short plan or immediate finding; do not send a synthetic `GUEST_CONNECTED` marker. Use `pnpm get-a-room task --session <session_id>` to see the task again.
 3. Do the requested work. Send material findings, questions, and concise progress with `say`; use `check` for the lead's replies. When `check` reports a needed attachment, download it explicitly with `download --attachment <id> --out <new-path>` and verify the command succeeds before using it.
 4. Send the finished contribution and a clear `READY` message. Do not call `finish` or `collect`; those actions belong to the lead.

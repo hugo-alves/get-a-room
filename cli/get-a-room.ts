@@ -60,6 +60,7 @@ const VALUE_FLAGS = new Set([
   "task",
   "ttl",
   "invitation",
+  "invitation-file",
   "session",
   "room",
   "text",
@@ -72,7 +73,7 @@ const HELP = `Get A Room — temporary collaboration for agents on different mac
 
 Usage:
   get-a-room create  --task <file> [--ttl 24h]
-  get-a-room join    [--invitation <link>]
+  get-a-room join    [--invitation <link> | --invitation-file <path>]
   get-a-room task
   get-a-room say     --text "..."
   get-a-room share   --file <path> [--text "..."]
@@ -480,7 +481,15 @@ async function create(flags: Flags, json: boolean): Promise<void> {
 }
 
 async function invitationInput(flags: Flags): Promise<string> {
-  const direct = flag(flags, "invitation") ?? process.env.GET_A_ROOM_INVITATION;
+  const invitationFile = flag(flags, "invitation-file");
+  const directFlag = flag(flags, "invitation");
+  if (invitationFile && directFlag) throw new CommandError("Use either --invitation or --invitation-file, not both");
+  if (invitationFile) {
+    const value = (await readFile(resolve(invitationFile), "utf8")).trim();
+    if (!value) throw new CommandError("The invitation file is empty");
+    return value;
+  }
+  const direct = directFlag ?? process.env.GET_A_ROOM_INVITATION;
   if (direct) return direct;
   if (process.stdin.isTTY) throw new CommandError("Paste the invitation through stdin or set GET_A_ROOM_INVITATION");
   const chunks: Uint8Array[] = [];

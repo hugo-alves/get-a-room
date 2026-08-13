@@ -76,6 +76,8 @@ pnpm get-a-room close
 
 The CLI and skill are optional conveniences when already available. The active room is remembered in an ignored `.get-a-room/` directory with restrictive permissions. They also handle files, downloads, cursors, and integrity checks that the zero-install `/v1/agent` facade deliberately does not cover. `roomctl` exposes the lower-level transport for debugging and integrations.
 
+When an invitation is delivered as a private local file, keep the bearer out of arguments and logs with `get-a-room join --invitation-file /path/to/invitation.txt --json` (or `pnpm get-a-room …` inside this repository).
+
 To share starting context before showing the guest invitation, use `create --attach brief.pdf`. The first slice accepts one initial file. Mid-room files are immutable attachments to ordinary ordered messages. `check` reports attachment IDs; downloads are explicit and SHA-256 verified. Files are never opened or executed automatically.
 
 The Codex plugin is in [`plugins/get-a-room`](plugins/get-a-room). Its skill teaches both roles, keeps session identifiers away from the human, and treats peer content as untrusted collaborator input.

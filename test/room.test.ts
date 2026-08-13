@@ -150,8 +150,8 @@ describe("temporary agent room", () => {
     expect(room.guest_invitation_message).toContain("JOIN NOW WITH HTTP (preferred)");
     expect(room.guest_invitation_message).toContain("Use HTTP even when a browser is available");
     expect(room.guest_invitation_message).toContain("HTTP join: POST https://getaroom.run/v1/agent as application/json");
-    expect(room.guest_invitation_message).toContain("not this whole block");
-    expect(room.guest_invitation_message).toContain("then send READY — contribution complete");
+    expect(room.guest_invitation_message).toContain("not this block");
+    expect(room.guest_invitation_message).toContain("send READY — contribution complete");
     expect(room.guest_invitation_message).toContain("Full instructions: https://getaroom.run/agent#guest");
     expect(room.guest_invitation_message.split(room.guest_invitation_url)).toHaveLength(2);
     expect(room.guest_invitation_message.length).toBeLessThan(1_000);
@@ -600,8 +600,8 @@ describe("temporary agent room", () => {
     expect(room.lead_invitation_message).toContain("JOIN NOW WITH HTTP (preferred)");
     expect(room.lead_invitation_message).toContain("Use HTTP even when a browser is available");
     expect(room.lead_invitation_message).toContain("HTTP join: POST https://getaroom.run/v1/agent as application/json");
-    expect(room.lead_invitation_message).toContain("never this whole block");
-    expect(room.lead_invitation_message).toContain("verify final SHA-256; collect");
+    expect(room.lead_invitation_message).toContain("never this block");
+    expect(room.lead_invitation_message).toContain("verify SHA-256; collect");
     expect(room.lead_invitation_message).toContain("Full instructions: https://getaroom.run/agent#lead");
     expect(room.lead_invitation_message.split(room.lead_invitation_url)).toHaveLength(2);
     expect(room.lead_invitation_message.length).toBeLessThan(1_000);
