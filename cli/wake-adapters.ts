@@ -53,11 +53,10 @@ function runProcess(
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       shell: false,
-      stdio: ["pipe", "pipe", "inherit"],
+      stdio: ["pipe", "ignore", "ignore"],
       env: childEnvironment(),
       ...(signal ? { signal } : {}),
     });
-    child.stdout.pipe(process.stderr, { end: false });
     child.once("error", reject);
     child.once("exit", (code, childSignal) => {
       if (childSignal) {

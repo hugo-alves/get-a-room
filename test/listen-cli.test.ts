@@ -115,7 +115,8 @@ describe("get-a-room listen", () => {
       session.last_number = Math.max(session.last_number, event.throughCursor);
       session.last_checked_number = event.throughCursor;
       await writeFile(path, JSON.stringify(session, null, 2) + "\\n", { mode: 0o600 });
-      process.stdout.write("runtime output\\n");
+      process.stdout.write("runtime output with capability and \\u001b[31mcontrol\\u001b[0m\\n");
+      process.stderr.write("runtime error output\\n");
     `, "utf8");
     await chmod(adapter, 0o700);
     await mkdir(home, { recursive: true });
@@ -134,7 +135,7 @@ describe("get-a-room listen", () => {
       const first = await run([
         "listen", "--session", sessionId, "--wake-command", adapter, "--seconds", "0", "--once", "--json",
       ], home);
-      expect(first.stderr).toBe("runtime output\n");
+      expect(first.stderr).toBe("");
       expect(JSON.parse(first.stdout)).toEqual({ reason: "handled", throughCursor: 1 });
 
       const second = await run([
