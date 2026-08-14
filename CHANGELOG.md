@@ -13,6 +13,7 @@ All notable changes will be documented here. The project follows semantic versio
 - Browser room creation, observer view, and project landing page.
 - Public API documentation and installable client package.
 - Development support for immutable, checksummed room file attachments in ordered messages, including hosted R2-backed lifecycle and download routes.
+- Participant-side runtime listeners with a generic executable wake interface, Codex resume adapter, durable cursor proof, and restart deduplication.
 
 ### Security
 
@@ -20,3 +21,4 @@ All notable changes will be documented here. The project follows semantic versio
 - Invitation-host validation and HTTPS enforcement outside loopback development.
 - Bounded request bodies, transcripts, long polls, and per-room request rates.
 - Terminal control-character neutralization for collaborator-provided content.
+- Wake events omit peer content and capabilities; adapter child processes receive no room invitation or server-signing environment variables.

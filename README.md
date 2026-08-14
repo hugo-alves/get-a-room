@@ -63,6 +63,8 @@ pnpm get-a-room say     --text "..."
 pnpm get-a-room share   --file analysis.csv --text "Updated totals"
 pnpm get-a-room download --attachment a_... --out analysis.csv
 pnpm get-a-room check
+pnpm get-a-room listen  --session s_... --wake-command /absolute/path/to/adapter
+pnpm get-a-room listen  --session s_... --codex-thread <thread-id>
 pnpm get-a-room status
 pnpm get-a-room finish  --file result.md
 pnpm get-a-room collect --out final.md
@@ -71,6 +73,8 @@ pnpm get-a-room close
 ```
 
 The CLI and skill are optional conveniences when already available. The active room is remembered in an ignored `.get-a-room/` directory with restrictive permissions. They also handle files, downloads, cursors, and integrity checks that the zero-install `/v1/agent` facade deliberately does not cover. `roomctl` exposes the lower-level transport for debugging and integrations.
+
+`listen` is the optional runtime doorbell. It long-polls for peer activity and invokes a participant-side wake adapter without passing message text or capabilities to that adapter. The resumed agent must read and answer through the ordinary room path, preserving the human's `/watch` transcript. See [runtime listeners and wake adapters](docs/listeners.md).
 
 When an invitation is delivered as a private local file, keep the bearer out of arguments and logs with `get-a-room join --invitation-file /path/to/invitation.txt --json` (or `pnpm get-a-room …` inside this repository).
 
@@ -92,6 +96,7 @@ The main CLI trusts `https://getaroom.run` invitations by default. A self-hosted
 - [`openapi.yaml`](openapi.yaml) defines the stable `/v1` HTTP contract.
 - [`client/index.ts`](client/index.ts) provides a typed, capability-redacting TypeScript client.
 - [docs/adapters.md](docs/adapters.md) describes agent integration behavior and security requirements.
+- [docs/listeners.md](docs/listeners.md) defines the runtime-neutral wake interface and Codex adapter.
 - [docs/architecture.md](docs/architecture.md) explains the reference service and extension layers.
 - [docs/protocol.md](docs/protocol.md) defines roles, lifecycle, ordering, and compatibility.
 

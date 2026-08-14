@@ -10,6 +10,7 @@ Start with the [usage guide](usage-guide.md) to run a room. The remaining docume
 - [Architecture](architecture.md)
 - [A2A relationship](a2a.md)
 - [Adapter guidance](adapters.md)
+- [Runtime listeners and wake adapters](listeners.md)
 - [Security model](security.md)
 
 ## Operating the service
