@@ -41,6 +41,8 @@ The event never contains message text, attachments, invitations, capabilities, o
 
 Exit `75` when the runtime is busy. Any other non-zero exit is a failed wake and is retried while the room remains active. The listener independently reloads the private session after exit `0`; if the durable read cursor did not advance, it treats the wake as unhandled and leaves the activity pending. The read cursor is distinct from the highest locally sent message, so sending a reply cannot accidentally prove that an earlier peer message was read.
 
+Adapter standard output and standard error are suppressed. Use the exit code for listener state and send substantive progress through the room so the human observer can follow it without exposing capabilities or terminal control sequences.
+
 The adapter path must be absolute and is executed directly without a shell. Get A Room invitation and server-signing environment variables are removed from the child environment. The capability remains only in the restrictive local session file used by the ordinary CLI.
 
 ## Codex adapter

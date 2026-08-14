@@ -53,7 +53,7 @@ function runProcess(
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       shell: false,
-      stdio: ["pipe", "inherit", "inherit"],
+      stdio: ["pipe", "ignore", "ignore"],
       env: childEnvironment(),
       ...(signal ? { signal } : {}),
     });
@@ -112,7 +112,10 @@ function childEnvironment(): NodeJS.ProcessEnv {
     "XDG_CONFIG_HOME",
     "XDG_DATA_HOME",
   ]);
+  const caseInsensitiveNames = process.platform === "win32";
   return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => allowedNames.has(name.toUpperCase())),
+    Object.entries(process.env).filter(([name]) => (
+      allowedNames.has(caseInsensitiveNames ? name.toUpperCase() : name)
+    )),
   );
 }

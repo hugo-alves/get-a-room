@@ -319,24 +319,34 @@ function sessionIdIsValid(value: string): boolean {
   return /^s_[0-9a-f]{24}$/u.test(value);
 }
 
-async function saveSession(session: Session): Promise<string> {
+async function saveSession(session: Session, activate = true): Promise<string> {
   const home = sessionHome();
   await ensurePrivateDirectory(home);
   await ensurePrivateDirectory(join(home, "sessions"));
   const sessionId = session.session_id ?? `s_${randomBytes(12).toString("hex")}`;
   session.session_id = sessionId;
   await writePrivate(join(home, "sessions", `${sessionId}.json`), `${JSON.stringify(session, null, 2)}\n`);
-  await writePrivate(join(home, "active"), `${sessionId}\n`);
+  if (activate) await writePrivate(join(home, "active"), `${sessionId}\n`);
   return sessionId;
 }
 
-async function saveSessionTombstone(session: Session, state: "collected" | "closed"): Promise<void> {
+async function saveSessionTombstone(
+  session: Session,
+  state: "collected" | "closed",
+  activate = true,
+): Promise<void> {
   session.state = state;
   session.invite = "";
   session.creator_invite = null;
   session.guest_invitation = null;
   session.observer_url = null;
-  await saveSession(session);
+  await saveSession(session, activate);
+}
+
+function shouldActivateSession(flags: Flags): boolean {
+  return flag(flags, "session") === undefined
+    && flag(flags, "room") === undefined
+    && process.env.GET_A_ROOM_SESSION === undefined;
 }
 
 function isSession(value: unknown): value is Session {
@@ -586,11 +596,16 @@ async function say(flags: Flags, json: boolean): Promise<void> {
     : undefined;
   if (number === undefined) throw new CommandError("The room did not confirm the message");
   session.last_number = Math.max(session.last_number, number);
-  await saveSession(session);
+  await saveSession(session, shouldActivateSession(flags));
   print(json ? { sent: true, number } : `Message sent.`, json);
 }
 
-async function uploadAndAttach(session: Session, path: string, text: string): Promise<RoomAttachment> {
+async function uploadAndAttach(
+  session: Session,
+  path: string,
+  text: string,
+  activate = true,
+): Promise<RoomAttachment> {
   const data = await readFile(path);
   const sha256 = createHash("sha256").update(data).digest("hex");
   const filename = basename(path);
@@ -622,14 +637,19 @@ async function uploadAndAttach(session: Session, path: string, text: string): Pr
     : undefined;
   if (number === undefined) throw new CommandError("The room did not attach the file to a message");
   session.last_number = Math.max(session.last_number, number);
-  await saveSession(session);
+  await saveSession(session, activate);
   return attachment;
 }
 
 async function share(flags: Flags, json: boolean): Promise<void> {
   const session = await loadSession(flags);
   const path = required(flags, "file");
-  const attachment = await uploadAndAttach(session, path, flag(flags, "text") ?? `Shared file: ${basename(path)}`);
+  const attachment = await uploadAndAttach(
+    session,
+    path,
+    flag(flags, "text") ?? `Shared file: ${basename(path)}`,
+    shouldActivateSession(flags),
+  );
   print(json ? { shared: true, attachment } : `Shared ${safeTerminalText(attachment.filename)} (${attachment.id}).`, json);
 }
 
@@ -693,7 +713,7 @@ async function check(flags: Flags, json: boolean): Promise<void> {
     const throughCursor = Math.max(...found.map((message) => message.number));
     session.last_number = Math.max(session.last_number, throughCursor);
     session.last_checked_number = Math.max(session.last_checked_number ?? 0, throughCursor);
-    await saveSession(session);
+    await saveSession(session, shouldActivateSession(flags));
   }
   const peerRole: RoomMessage["role"] = session.role === "lead" ? "guest" : "creator";
   const peerMessages = found.filter((message) => message.role === peerRole);
@@ -756,10 +776,11 @@ async function listen(flags: Flags, json: boolean): Promise<void> {
 
   let initial = await loadSession(flags);
   if (!initial.session_id) {
-    await saveSession(initial);
-    initial = await loadSession(flags);
+    const sessionId = await saveSession(initial, false);
+    initial = await loadSession({ ...flags, session: sessionId });
   }
   if (!initial.invite) throw new CommandError("The room session no longer has an active invitation");
+  const pinned: Flags = { ...flags, session: initial.session_id! };
 
   const controller = new AbortController();
   const stop = (): void => controller.abort();
@@ -773,12 +794,12 @@ async function listen(flags: Flags, json: boolean): Promise<void> {
   try {
     const result = await listenForRoomActivity({
       client,
-      loadSession: async () => asListenerSession(await loadSession(flags)),
+      loadSession: async () => asListenerSession(await loadSession(pinned)),
       markChecked: async (throughCursor) => {
-        const session = await loadSession(flags);
+        const session = await loadSession(pinned);
         session.last_number = Math.max(session.last_number, throughCursor);
         session.last_checked_number = Math.max(session.last_checked_number ?? 0, throughCursor);
-        await saveSession(session);
+        await saveSession(session, false);
       },
       adapter,
       waitSeconds: seconds(flags),
@@ -942,7 +963,7 @@ async function finish(flags: Flags, json: boolean): Promise<void> {
   const sha256 = isRecord(body) && typeof body.sha256 === "string" ? body.sha256 : undefined;
   if (!sha256) throw new CommandError("The room did not confirm the final result");
   session.state = "finished";
-  await saveSession(session);
+  await saveSession(session, shouldActivateSession(flags));
   print(json ? { finished: true, sha256 } : "Final result submitted. The room is ready to collect.", json);
 }
 
@@ -990,7 +1011,7 @@ async function collect(flags: Flags, json: boolean): Promise<void> {
   } finally {
     if (!moved) await rm(temporary, { force: true });
   }
-  await saveSessionTombstone(session, "collected");
+  await saveSessionTombstone(session, "collected", shouldActivateSession(flags));
   print(
     json
       ? {
@@ -1046,7 +1067,7 @@ async function close(flags: Flags, json: boolean): Promise<void> {
     { method: "DELETE", headers: bearer(session.creator_invite) },
     [session.creator_invite],
   );
-  await saveSessionTombstone(session, "closed");
+  await saveSessionTombstone(session, "closed", shouldActivateSession(flags));
   print(json ? { closed: true } : "The room is closed.", json);
 }
 
