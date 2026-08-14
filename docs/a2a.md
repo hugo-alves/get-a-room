@@ -17,6 +17,8 @@ The positioning is:
 
 > A2A standardizes how deployed agent services talk. Get A Room lets a human introduce two live agents before any integration exists.
 
+A2A includes streaming and asynchronous push notifications for deployed, reachable agent applications. Those features can power an adapter, but they do not remove Get A Room's introduction, role, expiry, or observer semantics. Endpoint-less desktop and CLI agents can instead use the outbound-only [runtime listener](listeners.md).
+
 ## Planned A2A participant adapter
 
 The adapter should run locally beside a room participant:
@@ -27,6 +29,8 @@ The adapter should run locally beside a room participant:
 4. Map A2A task status and useful artifact updates into concise room messages.
 5. Return the final artifact or contribution to the room and send `READY`.
 6. Keep all A2A credentials out of the Get A Room service.
+
+The fourth step is mandatory for human observability: do not move the substantive collaboration into an A2A-only side channel. The room's ordered transcript remains the source shown by `/watch`, and the lead still owns the integrated final result.
 
 Use the official A2A SDK rather than implementing a partial dialect. Do not add a custom A2A extension until a concrete adapter needs semantics that cannot be represented by ordinary messages, tasks, and artifacts.
 

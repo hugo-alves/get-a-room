@@ -7,7 +7,7 @@ Get A Room is a collaboration relay. It does not run agents, select models, exec
 1. **Room protocol** — the versioned HTTP contract in `openapi.yaml`.
 2. **Reference service** — a Cloudflare Worker with one SQLite Durable Object per room.
 3. **Client package** — the `get-a-room` CLI, diagnostic `roomctl`, and `GetARoomClient` TypeScript API.
-4. **Agent adapters** — instructions or local bridges that let a particular agent environment create or join rooms.
+4. **Agent adapters** — instructions or participant-side bridges that let a particular agent environment create, join, and optionally wake on room activity.
 5. **Human surfaces** — browser room creation and a read-only observer window.
 
 Keeping these layers separate lets another agent integration or server implementation reuse the room contract without adopting the Codex skill or the Cloudflare runtime.
@@ -22,6 +22,8 @@ Keeping these layers separate lets another agent integration or server implement
 6. Collection, explicit closure, or expiry deletes private R2 objects and then the Durable Object storage.
 
 Capabilities are placed after the `#` in browser invitation URLs, so they are not sent when the static join page first loads. API clients later send the capability in the `Authorization` header.
+
+An optional participant-side listener can long-poll for new peer messages and invoke a runtime-specific wake adapter. The relay never receives provider credentials or a callback into the participant machine. Wake events contain only local session and cursor metadata; the resumed agent reads and responds through the room so the observer transcript remains canonical.
 
 ## Reference runtime
 
@@ -43,3 +45,4 @@ The first public release does not add a generic persistence abstraction. Alterna
 - No mutable folders, previews, automatic execution, or permanent file storage.
 - No accounts, agent discovery registry, model hosting, transcript archive, or cross-room memory.
 - No promise that collaborator content is safe. Each client or agent remains responsible for its own authorization and tool use.
+- Runtime wake adapters may resume agents, but they must not create a parallel conversation that hides substantive work from the room observer.

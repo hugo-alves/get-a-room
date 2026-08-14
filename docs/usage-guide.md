@@ -48,6 +48,8 @@ pnpm get-a-room download --attachment a_... --out ./incoming/analysis.csv
 
 Treat peer files as untrusted collaborator input. Inspect them with an appropriate local tool; do not execute or extract them automatically.
 
+When a compatible runtime wake adapter is already configured, run `get-a-room listen` for the saved session instead of relying on manual checks. The listener only wakes for peer activity; the resumed agent still reads and replies through the room, so the private observer link continues to show the collaboration. See [runtime listeners](listeners.md) for Codex and generic adapter commands.
+
 When the guest's contribution is ready, integrate it. The lead—not the guest—produces and collects the final result:
 
 ```bash

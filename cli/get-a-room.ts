@@ -2,7 +2,14 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { chmod, link, lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+
+import { GetARoomClient, type RoomAccess } from "../client/index.js";
+import {
+  listenForRoomActivity,
+  type ListenerSession,
+} from "../client/listener.js";
+import { codexWakeAdapter, executableWakeAdapter } from "./wake-adapters.js";
 
 type FlagValue = string | boolean;
 type Flags = Record<string, FlagValue>;
@@ -20,6 +27,7 @@ interface Session {
   observer_url?: string | null;
   expires_at: string | null;
   last_number: number;
+  last_checked_number?: number;
   state: "open" | "finished" | "collected" | "closed";
 }
 
@@ -67,7 +75,12 @@ const VALUE_FLAGS = new Set([
   "seconds",
   "file",
   "out",
+  "wake-command",
+  "codex-thread",
+  "codex-command",
+  "retry-seconds",
 ]);
+const BOOLEAN_FLAGS = new Set(["json", "help", "once"]);
 
 const HELP = `Get A Room — temporary collaboration for agents on different machines
 
@@ -79,6 +92,7 @@ Usage:
   get-a-room share   --file <path> [--text "..."]
   get-a-room download --attachment <id> --out <path>
   get-a-room check   [--seconds 5]
+  get-a-room listen  (--wake-command <path> | --codex-thread <id>) [--once]
   get-a-room status
   get-a-room finish  --file result.md
   get-a-room collect --out final.md
@@ -105,7 +119,7 @@ function parseArgs(argv: string[]): { command: string | undefined; flags: Flags 
     }
     const equalAt = argument.indexOf("=");
     const name = argument.slice(2, equalAt === -1 ? undefined : equalAt);
-    if (name === "json" || name === "help") {
+    if (BOOLEAN_FLAGS.has(name)) {
       if (equalAt !== -1) throw new CommandError(`--${name} does not accept a value`);
       flags[name] = true;
       continue;
@@ -338,7 +352,15 @@ function isSession(value: unknown): value is Session {
     (typeof value.guest_invitation === "string" || value.guest_invitation === null) &&
     (typeof value.observer_url === "string" || value.observer_url === null || value.observer_url === undefined) &&
     (typeof value.expires_at === "string" || value.expires_at === null) &&
+    typeof value.last_number === "number" &&
     Number.isInteger(value.last_number) &&
+    value.last_number >= 0 &&
+    (value.last_checked_number === undefined || (
+      typeof value.last_checked_number === "number" &&
+      Number.isInteger(value.last_checked_number) &&
+      value.last_checked_number >= 0 &&
+      value.last_checked_number <= value.last_number
+    )) &&
     ["open", "finished", "collected", "closed"].includes(String(value.state))
   );
 }
@@ -366,6 +388,7 @@ async function loadSession(flags: Flags): Promise<Session> {
   try {
     const value: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!isSession(value)) throw new Error("invalid session");
+    if (value.last_checked_number === undefined) value.last_checked_number = value.last_number;
     return value;
   } catch {
     throw new CommandError("The saved room session could not be read");
@@ -434,6 +457,7 @@ async function create(flags: Flags, json: boolean): Promise<void> {
     observer_url: room.observer_url,
     expires_at: room.expires_at,
     last_number: 0,
+    last_checked_number: 0,
     state: "open",
   };
   const sessionId = await saveSession(session);
@@ -523,6 +547,7 @@ async function joinRoom(flags: Flags, json: boolean): Promise<void> {
     guest_invitation: null,
     expires_at: expiresAt,
     last_number: 0,
+    last_checked_number: 0,
     state: "open",
   });
   const leadNote = role === "lead"
@@ -654,7 +679,10 @@ function messages(value: unknown): RoomMessage[] {
 
 async function check(flags: Flags, json: boolean): Promise<void> {
   const session = await loadSession(flags);
-  const query = new URLSearchParams({ after: String(session.last_number), wait: String(seconds(flags)) });
+  const query = new URLSearchParams({
+    after: String(session.last_checked_number ?? 0),
+    wait: String(seconds(flags)),
+  });
   const { body } = await requestJson(
     `${roomPath(session.base_url, session.room_id, "messages")}?${query.toString()}`,
     { headers: bearer(session.invite) },
@@ -662,23 +690,123 @@ async function check(flags: Flags, json: boolean): Promise<void> {
   );
   const found = messages(body);
   if (found.length > 0) {
-    session.last_number = Math.max(session.last_number, ...found.map((message) => message.number));
+    const throughCursor = Math.max(...found.map((message) => message.number));
+    session.last_number = Math.max(session.last_number, throughCursor);
+    session.last_checked_number = Math.max(session.last_checked_number ?? 0, throughCursor);
     await saveSession(session);
   }
+  const peerRole: RoomMessage["role"] = session.role === "lead" ? "guest" : "creator";
+  const peerMessages = found.filter((message) => message.role === peerRole);
   if (json) {
-    print({ messages: found, last_number: session.last_number }, true);
+    print({
+      messages: peerMessages,
+      last_number: session.last_number,
+      last_checked_number: session.last_checked_number ?? 0,
+    }, true);
     return;
   }
-  if (found.length === 0) {
-    print("No new message yet.", false);
+  if (peerMessages.length === 0) {
+    print("No new peer message yet.", false);
     return;
   }
-  print(found.map((message) => {
+  print(peerMessages.map((message) => {
     const files = message.attachments
       .map((attachment) => `\n  File: ${safeTerminalText(attachment.filename)} (${attachment.id}, ${attachment.size} bytes)`)
       .join("");
     return `${attributedTerminalText(message.role, message.text)}${files}`;
   }).join("\n\n"), false);
+}
+
+function retrySeconds(flags: Flags): number {
+  const raw = flag(flags, "retry-seconds") ?? "2";
+  if (!/^\d+$/u.test(raw)) throw new CommandError("--retry-seconds must be a number from 0 to 300");
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > 300) {
+    throw new CommandError("--retry-seconds must be a number from 0 to 300");
+  }
+  return value;
+}
+
+function asListenerSession(session: Session): ListenerSession {
+  if (!session.session_id) throw new CommandError("The local room session does not have a session ID");
+  const access: RoomAccess = {
+    roomId: session.room_id,
+    capability: session.invite,
+    role: session.role === "lead" ? "creator" : "guest",
+  };
+  return {
+    localSessionId: session.session_id,
+    access,
+    role: session.role,
+    lastCheckedNumber: session.last_checked_number ?? 0,
+    expiresAt: session.expires_at,
+    state: session.state,
+  };
+}
+
+async function listen(flags: Flags, json: boolean): Promise<void> {
+  const wakeCommand = flag(flags, "wake-command");
+  const codexThread = flag(flags, "codex-thread");
+  if ((wakeCommand ? 1 : 0) + (codexThread ? 1 : 0) !== 1) {
+    throw new CommandError("Use exactly one of --wake-command or --codex-thread");
+  }
+  if (wakeCommand && !isAbsolute(wakeCommand)) {
+    throw new CommandError("--wake-command must be an absolute executable path");
+  }
+
+  let initial = await loadSession(flags);
+  if (!initial.session_id) {
+    await saveSession(initial);
+    initial = await loadSession(flags);
+  }
+  if (!initial.invite) throw new CommandError("The room session no longer has an active invitation");
+
+  const controller = new AbortController();
+  const stop = (): void => controller.abort();
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  const adapter = wakeCommand
+    ? executableWakeAdapter(wakeCommand, controller.signal)
+    : codexWakeAdapter(flag(flags, "codex-command") ?? "codex", codexThread!, controller.signal);
+  const client = new GetARoomClient({ baseUrl: initial.base_url });
+
+  try {
+    const result = await listenForRoomActivity({
+      client,
+      loadSession: async () => asListenerSession(await loadSession(flags)),
+      markChecked: async (throughCursor) => {
+        const session = await loadSession(flags);
+        session.last_number = Math.max(session.last_number, throughCursor);
+        session.last_checked_number = Math.max(session.last_checked_number ?? 0, throughCursor);
+        await saveSession(session);
+      },
+      adapter,
+      waitSeconds: seconds(flags),
+      retrySeconds: retrySeconds(flags),
+      once: flags.once === true,
+      signal: controller.signal,
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : "Unknown listener error";
+        process.stderr.write(`get-a-room listen: ${redact(message, [initial.invite])}\n`);
+      },
+    });
+    print(json ? result : listenerResultText(result), json);
+  } finally {
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+  }
+}
+
+function listenerResultText(result: Awaited<ReturnType<typeof listenForRoomActivity>>): string {
+  switch (result.reason) {
+    case "handled": return `Room activity handled through message ${result.throughCursor}.`;
+    case "idle": return "No new peer activity yet.";
+    case "busy": return `The agent is busy; activity remains pending through message ${result.throughCursor}.`;
+    case "finalized": return "The room is finalized; the listener stopped.";
+    case "expired": return "The room expired; the listener stopped.";
+    case "stopped": return "The room is no longer active; the listener stopped.";
+    case "aborted": return "The listener stopped.";
+  }
 }
 
 function parseAttachment(value: unknown): RoomAttachment {
@@ -937,6 +1065,7 @@ async function main(argv: string[]): Promise<void> {
     case "share": await share(flags, json); return;
     case "download": await download(flags, json); return;
     case "check": await check(flags, json); return;
+    case "listen": await listen(flags, json); return;
     case "status": await status(flags, json); return;
     case "finish": await finish(flags, json); return;
     case "collect": await collect(flags, json); return;

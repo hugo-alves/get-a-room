@@ -24,7 +24,15 @@ export default defineConfig({
         test: {
           name: "cli",
           environment: "node",
-          include: ["test/cli.test.ts", "test/get-a-room.test.ts", "test/client.test.ts", "test/instructions.test.ts"],
+          include: [
+            "test/cli.test.ts",
+            "test/get-a-room.test.ts",
+            "test/client.test.ts",
+            "test/instructions.test.ts",
+            "test/listen-cli.test.ts",
+            "test/listener.test.ts",
+            "test/wake-adapters.test.ts",
+          ],
         },
       },
     ],
