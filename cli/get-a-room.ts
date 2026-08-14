@@ -319,14 +319,14 @@ function sessionIdIsValid(value: string): boolean {
   return /^s_[0-9a-f]{24}$/u.test(value);
 }
 
-async function saveSession(session: Session): Promise<string> {
+async function saveSession(session: Session, activate = true): Promise<string> {
   const home = sessionHome();
   await ensurePrivateDirectory(home);
   await ensurePrivateDirectory(join(home, "sessions"));
   const sessionId = session.session_id ?? `s_${randomBytes(12).toString("hex")}`;
   session.session_id = sessionId;
   await writePrivate(join(home, "sessions", `${sessionId}.json`), `${JSON.stringify(session, null, 2)}\n`);
-  await writePrivate(join(home, "active"), `${sessionId}\n`);
+  if (activate) await writePrivate(join(home, "active"), `${sessionId}\n`);
   return sessionId;
 }
 
@@ -756,10 +756,11 @@ async function listen(flags: Flags, json: boolean): Promise<void> {
 
   let initial = await loadSession(flags);
   if (!initial.session_id) {
-    await saveSession(initial);
-    initial = await loadSession(flags);
+    const sessionId = await saveSession(initial, false);
+    initial = await loadSession({ ...flags, session: sessionId });
   }
   if (!initial.invite) throw new CommandError("The room session no longer has an active invitation");
+  const pinned: Flags = { ...flags, session: initial.session_id! };
 
   const controller = new AbortController();
   const stop = (): void => controller.abort();
@@ -773,12 +774,12 @@ async function listen(flags: Flags, json: boolean): Promise<void> {
   try {
     const result = await listenForRoomActivity({
       client,
-      loadSession: async () => asListenerSession(await loadSession(flags)),
+      loadSession: async () => asListenerSession(await loadSession(pinned)),
       markChecked: async (throughCursor) => {
-        const session = await loadSession(flags);
+        const session = await loadSession(pinned);
         session.last_number = Math.max(session.last_number, throughCursor);
         session.last_checked_number = Math.max(session.last_checked_number ?? 0, throughCursor);
-        await saveSession(session);
+        await saveSession(session, false);
       },
       adapter,
       waitSeconds: seconds(flags),

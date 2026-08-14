@@ -63,6 +63,8 @@ describe("wake adapters", () => {
           creator: process.env.ROOM_CREATOR_KEY,
           signing: process.env.ROOM_SIGNING_SECRET,
           unrelated: process.env.UNRELATED_API_TOKEN,
+          caseVariantPath: process.env.Path,
+          caseVariantHome: process.env.home,
           path: process.env.PATH,
           roomHome: process.env.GET_A_ROOM_HOME
         }));
@@ -75,6 +77,8 @@ describe("wake adapters", () => {
       creator: process.env.ROOM_CREATOR_KEY,
       signing: process.env.ROOM_SIGNING_SECRET,
       unrelated: process.env.UNRELATED_API_TOKEN,
+      caseVariantPath: process.env.Path,
+      caseVariantHome: process.env.home,
       roomHome: process.env.GET_A_ROOM_HOME,
     };
     process.env.GET_A_ROOM_INVITATION = "invitation-secret";
@@ -82,6 +86,8 @@ describe("wake adapters", () => {
     process.env.ROOM_CREATOR_KEY = "creator-secret";
     process.env.ROOM_SIGNING_SECRET = "signing-secret";
     process.env.UNRELATED_API_TOKEN = "unrelated-secret";
+    process.env.Path = "case-variant-secret";
+    process.env.home = "case-variant-secret";
     process.env.GET_A_ROOM_HOME = fixture.directory;
     try {
       await expect(executableWakeAdapter(fixture.path).wake(event)).resolves.toBe("accepted");
@@ -91,6 +97,8 @@ describe("wake adapters", () => {
       restoreEnvironment("ROOM_CREATOR_KEY", previous.creator);
       restoreEnvironment("ROOM_SIGNING_SECRET", previous.signing);
       restoreEnvironment("UNRELATED_API_TOKEN", previous.unrelated);
+      restoreEnvironment("Path", previous.caseVariantPath);
+      restoreEnvironment("home", previous.caseVariantHome);
       restoreEnvironment("GET_A_ROOM_HOME", previous.roomHome);
     }
     expect(JSON.parse(await readFile(capture, "utf8"))).toEqual({
