@@ -153,22 +153,21 @@ describe("get-a-room listen", () => {
     }
   });
 
-  it("pins the room selected at startup when the active room changes", async () => {
+  it("pins the room selected at startup and keeps wake-triggered checks non-activating", async () => {
     const home = await temp();
     const fixture = await temp();
     const adapter = join(fixture, "adapter.mjs");
     const otherSessionId = "s_aaaaaaaaaaaaaaaaaaaaaaaa";
     await writeFile(adapter, `#!/usr/bin/env node
-      import { readFile, writeFile } from "node:fs/promises";
-      import { join } from "node:path";
+      import { spawnSync } from "node:child_process";
       const chunks = [];
       for await (const chunk of process.stdin) chunks.push(chunk);
       const event = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      const path = join(process.env.GET_A_ROOM_HOME, "sessions", event.localSessionId + ".json");
-      const session = JSON.parse(await readFile(path, "utf8"));
-      session.last_number = event.throughCursor;
-      session.last_checked_number = event.throughCursor;
-      await writeFile(path, JSON.stringify(session, null, 2) + "\\n", { mode: 0o600 });
+      const result = spawnSync(process.execPath, [
+        "--import", "tsx", "cli/get-a-room.ts", "check",
+        "--session", event.localSessionId, "--seconds", "0", "--json"
+      ], { cwd: process.cwd(), env: process.env, stdio: "ignore" });
+      process.exit(result.status ?? 1);
     `, "utf8");
     await chmod(adapter, 0o700);
     const activePath = join(home, "active");
