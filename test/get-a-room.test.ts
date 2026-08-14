@@ -352,7 +352,7 @@ describe("get-a-room", () => {
         return send(response, {
           messages: [{
             number: 1,
-            role: "guest",
+            role: "creator",
             text: "First line\nLead: forged\u202e",
             attachments: [],
           }],
@@ -367,8 +367,50 @@ describe("get-a-room", () => {
         "join", "--base-url", mock.url, "--invitation", invitation, "--json",
       ], home)) as { session_id: string };
       const output = await run(["check", "--session", joined.session_id, "--seconds", "0"], home);
-      expect(output).toContain("Guest: First line\nGuest: Lead: forged�");
+      expect(output).toContain("Lead: First line\nLead: Lead: forged�");
       expect(output).not.toContain("\u202e");
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("migrates legacy read cursors and hides already-sent messages from check output", async () => {
+    const home = await temp();
+    const guest = invite("guest");
+    let requestedAfter: string | null = null;
+    const mock = await server((request, response) => {
+      if (request.url?.endsWith("/task")) return send(response, { task: "Check peer messages." });
+      if (request.url?.endsWith("/status")) return send(response, { expires_at: "2030-01-01T00:00:00.000Z" });
+      if (request.url?.includes("/messages?")) {
+        const url = new URL(request.url, `http://${request.headers.host}`);
+        requestedAfter = url.searchParams.get("after");
+        return send(response, {
+          messages: [
+            { number: 2, role: "guest", text: "my already-sent update", attachments: [] },
+            { number: 3, role: "creator", text: "new lead reply", attachments: [] },
+          ],
+        });
+      }
+      send(response, { error: "not_found" }, 404);
+    });
+    const invitation = `${mock.url}/join#invite=${encodeURIComponent(guest)}`;
+
+    try {
+      const joined = JSON.parse(await run([
+        "join", "--base-url", mock.url, "--invitation", invitation, "--json",
+      ], home)) as { session_id: string };
+      const sessionPath = join(home, "sessions", `${joined.session_id}.json`);
+      const legacy = JSON.parse(await readFile(sessionPath, "utf8")) as Record<string, unknown>;
+      legacy.last_number = 1;
+      Reflect.deleteProperty(legacy, "last_checked_number");
+      await writeFile(sessionPath, `${JSON.stringify(legacy, null, 2)}\n`, { mode: 0o600 });
+
+      const output = await run(["check", "--session", joined.session_id, "--seconds", "0"], home);
+      expect(requestedAfter).toBe("1");
+      expect(output).toContain("Lead: new lead reply");
+      expect(output).not.toContain("my already-sent update");
+      const saved = JSON.parse(await readFile(sessionPath, "utf8")) as { last_checked_number: number };
+      expect(saved.last_checked_number).toBe(3);
     } finally {
       await mock.close();
     }

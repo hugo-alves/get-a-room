@@ -50,7 +50,7 @@ describe("wake adapters", () => {
     await expect(executableWakeAdapter(fixture.path).wake(event)).resolves.toBe("busy");
   });
 
-  it("removes room capabilities and signing secrets from the child environment", async () => {
+  it("passes only allowlisted runtime paths to the child environment", async () => {
     const fixture = await executable("");
     const capture = join(fixture.directory, "env.json");
     await writeFile(fixture.path, `#!/usr/bin/env node
@@ -61,7 +61,10 @@ describe("wake adapters", () => {
           invitation: process.env.GET_A_ROOM_INVITATION,
           invite: process.env.ROOM_INVITE,
           creator: process.env.ROOM_CREATOR_KEY,
-          signing: process.env.ROOM_SIGNING_SECRET
+          signing: process.env.ROOM_SIGNING_SECRET,
+          unrelated: process.env.UNRELATED_API_TOKEN,
+          path: process.env.PATH,
+          roomHome: process.env.GET_A_ROOM_HOME
         }));
       });
     `, "utf8");
@@ -71,11 +74,15 @@ describe("wake adapters", () => {
       invite: process.env.ROOM_INVITE,
       creator: process.env.ROOM_CREATOR_KEY,
       signing: process.env.ROOM_SIGNING_SECRET,
+      unrelated: process.env.UNRELATED_API_TOKEN,
+      roomHome: process.env.GET_A_ROOM_HOME,
     };
     process.env.GET_A_ROOM_INVITATION = "invitation-secret";
     process.env.ROOM_INVITE = "room-secret";
     process.env.ROOM_CREATOR_KEY = "creator-secret";
     process.env.ROOM_SIGNING_SECRET = "signing-secret";
+    process.env.UNRELATED_API_TOKEN = "unrelated-secret";
+    process.env.GET_A_ROOM_HOME = fixture.directory;
     try {
       await expect(executableWakeAdapter(fixture.path).wake(event)).resolves.toBe("accepted");
     } finally {
@@ -83,8 +90,13 @@ describe("wake adapters", () => {
       restoreEnvironment("ROOM_INVITE", previous.invite);
       restoreEnvironment("ROOM_CREATOR_KEY", previous.creator);
       restoreEnvironment("ROOM_SIGNING_SECRET", previous.signing);
+      restoreEnvironment("UNRELATED_API_TOKEN", previous.unrelated);
+      restoreEnvironment("GET_A_ROOM_HOME", previous.roomHome);
     }
-    expect(JSON.parse(await readFile(capture, "utf8"))).toEqual({});
+    expect(JSON.parse(await readFile(capture, "utf8"))).toEqual({
+      path: process.env.PATH,
+      roomHome: fixture.directory,
+    });
   });
 
   it("resumes the selected Codex thread with a safe room-check prompt", async () => {

@@ -81,13 +81,38 @@ function runProcess(
 }
 
 function childEnvironment(): NodeJS.ProcessEnv {
-  const privateNames = new Set([
-    "GET_A_ROOM_INVITATION",
-    "ROOM_INVITE",
-    "ROOM_CREATOR_KEY",
-    "ROOM_SIGNING_SECRET",
+  const allowedNames = new Set([
+    "APPDATA",
+    "CODEX_HOME",
+    "COLORTERM",
+    "COMSPEC",
+    "FORCE_COLOR",
+    "GET_A_ROOM_HOME",
+    "HOME",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LOCALAPPDATA",
+    "LOGNAME",
+    "NO_COLOR",
+    "PATH",
+    "PATHEXT",
+    "SHELL",
+    "SYSTEMROOT",
+    "TEMP",
+    "TERM",
+    "TMP",
+    "TMPDIR",
+    "USER",
+    "USERPROFILE",
+    "WINDIR",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
   ]);
   return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !privateNames.has(name.toUpperCase())),
+    Object.entries(process.env).filter(([name]) => allowedNames.has(name.toUpperCase())),
   );
 }

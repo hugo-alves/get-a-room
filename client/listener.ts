@@ -135,8 +135,7 @@ function localStopReason(session: ListenerSession, now: number): "expired" | "st
 }
 
 async function retryDelay(seconds: number, attempt: number, signal?: AbortSignal): Promise<void> {
-  const milliseconds = Math.min(seconds * 1000 * 2 ** Math.min(attempt - 1, 5), 30_000);
-  if (milliseconds === 0) return;
+  const milliseconds = Math.min(Math.max(seconds, 1) * 1000 * 2 ** Math.min(attempt - 1, 5), 30_000);
   await new Promise<void>((resolve) => {
     const finish = (): void => {
       signal?.removeEventListener("abort", abort);

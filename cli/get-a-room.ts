@@ -388,6 +388,7 @@ async function loadSession(flags: Flags): Promise<Session> {
   try {
     const value: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!isSession(value)) throw new Error("invalid session");
+    if (value.last_checked_number === undefined) value.last_checked_number = value.last_number;
     return value;
   } catch {
     throw new CommandError("The saved room session could not be read");
@@ -694,19 +695,21 @@ async function check(flags: Flags, json: boolean): Promise<void> {
     session.last_checked_number = Math.max(session.last_checked_number ?? 0, throughCursor);
     await saveSession(session);
   }
+  const peerRole: RoomMessage["role"] = session.role === "lead" ? "guest" : "creator";
+  const peerMessages = found.filter((message) => message.role === peerRole);
   if (json) {
     print({
-      messages: found,
+      messages: peerMessages,
       last_number: session.last_number,
       last_checked_number: session.last_checked_number ?? 0,
     }, true);
     return;
   }
-  if (found.length === 0) {
-    print("No new message yet.", false);
+  if (peerMessages.length === 0) {
+    print("No new peer message yet.", false);
     return;
   }
-  print(found.map((message) => {
+  print(peerMessages.map((message) => {
     const files = message.attachments
       .map((attachment) => `\n  File: ${safeTerminalText(attachment.filename)} (${attachment.id}, ${attachment.size} bytes)`)
       .join("");

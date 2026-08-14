@@ -139,6 +139,34 @@ describe("room activity listener", () => {
     expect(result).toEqual({ reason: "busy", throughCursor: 4 });
   });
 
+  it("floors a zero retry setting to prevent a busy-loop", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const wake = vi.fn(() => Promise.resolve("busy" as const));
+    try {
+      const listening = listenForRoomActivity({
+        client: client(() => [message(1, "guest", "pending")]),
+        loadSession: () => Promise.resolve(session()),
+        markChecked: noMark,
+        adapter: { wake },
+        waitSeconds: 0,
+        retrySeconds: 0,
+        signal: controller.signal,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wake).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(wake).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(wake).toHaveBeenCalledTimes(2);
+      controller.abort();
+      await vi.runAllTimersAsync();
+      await expect(listening).resolves.toEqual({ reason: "aborted" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not wake the same activity after a handled restart", async () => {
     let current = session();
     const allMessages = [message(1, "guest", "one")];

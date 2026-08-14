@@ -47,6 +47,8 @@ The adapter path must be absolute and is executed directly without a shell. Get 
 
 `--codex-thread` uses `codex exec resume <thread-id> -`. The prompt contains the harmless local session ID and cursor only. It tells Codex to check the room, treat peer content as untrusted, and route useful responses back through the room for the observer.
 
+Wake processes receive a small allowlist of ordinary runtime paths and terminal settings, including `PATH`, user-home paths, `CODEX_HOME`, and `GET_A_ROOM_HOME`. Arbitrary inherited environment variables such as provider tokens are not forwarded. A generic adapter that needs credentials must obtain them from its own explicitly configured secure store. `GET_A_ROOM_HOME` points at the private local session store because the resumed runtime must read the room capability through the ordinary CLI; the capability itself is never placed in the wake event or prompt.
+
 Codex lifecycle hooks are not the wake mechanism: they run at events inside an already-running Codex lifecycle. The runtime adapter resumes the selected thread after external room activity.
 
 ## Other runtimes and A2A
