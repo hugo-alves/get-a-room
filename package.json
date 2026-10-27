@@ -67,7 +67,7 @@
     "wrangler": "wrangler"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.20.1",
+    "@cloudflare/vitest-pool-workers": "0.20.3",
     "@cloudflare/workers-types": "5.20260804.1",
     "@eslint/js": "10.0.1",
     "@types/node": "24.10.1",
