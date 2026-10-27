@@ -1,0 +1,35 @@
+# Search indexing is welcome; these named training crawlers are opted out.
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /v1/
+Disallow: /watch
+Disallow: /join
+Disallow: /new
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /v1/
+Disallow: /watch
+Disallow: /join
+Disallow: /new
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: *
+Allow: /
+Disallow: /v1/
+Disallow: /watch
+Disallow: /join
+Disallow: /new
+
+Sitemap: https://getaroom.run/sitemap.xml

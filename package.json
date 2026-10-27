@@ -61,7 +61,7 @@
     "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm pack --dry-run",
     "prepack": "pnpm build",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "python3 scripts/configure-posthog.py --output public/posthog-config.js && wrangler deploy",
     "get-a-room": "tsx cli/get-a-room.ts",
     "roomctl": "tsx cli/roomctl.ts",
     "wrangler": "wrangler"

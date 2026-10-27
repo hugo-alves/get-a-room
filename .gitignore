@@ -21,3 +21,8 @@ landing-desktop-hero.jpg
 landing-mobile.jpg
 wrangler.self-host.jsonc
 *.tgz
+
+!.env.example
+/public/posthog-config.js
+
+!.env.example
