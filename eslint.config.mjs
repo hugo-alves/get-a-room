@@ -6,6 +6,12 @@ export default tseslint.config(
     ignores: ["dist/**", ".wrangler/**", "node_modules/**", "coverage/**"],
   },
   eslint.configs.recommended,
+  {
+    files: ["public/ai-referrals.js", "public/posthog-bootstrap.js", "public/posthog-config.js"],
+    languageOptions: {
+      globals: Object.fromEntries(["window", "document", "location", "URL", "CustomEvent"].map((name) => [name, "readonly"])),
+    },
+  },
   ...tseslint.configs.strictTypeChecked.map((config) => ({ ...config, files: ["**/*.ts"] })),
   {
     files: ["**/*.ts"],
